@@ -97,6 +97,39 @@ export interface TimelineEntry {
   timestamp: string;
 }
 
+export interface CorrelationResult {
+  related_signal_id: number;
+  score: number;
+  method: string;
+  explanation: string;
+}
+
+export interface GraphNode {
+  id: number;
+  source: string;
+  title: string;
+  risk_score: number;
+  risk_tier: string;
+  sentiment_label: string;
+  timestamp: string;
+}
+
+export interface GraphEdge {
+  source: number;
+  target: number;
+  weight: number;
+  method: string;
+  explanation: string;
+}
+
+export interface CorrelationGraphData {
+  center_signal_id: number;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  node_count: number;
+  edge_count: number;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -145,4 +178,15 @@ export const api = {
   // Risk
   riskOverview: () => apiFetch<RiskOverview>("/api/risk/overview"),
   riskHeatmap: () => apiFetch<HeatmapData>("/api/risk/heatmap"),
+
+  // Correlation
+  getCorrelations: (signalId: number, k = 10) =>
+    apiFetch<{ signal_id: number; correlations: CorrelationResult[]; total: number }>(
+      `/api/correlation/${signalId}?k=${k}`
+    ),
+  getCorrelationGraph: (signalId: number, depth = 1, k = 8) =>
+    apiFetch<CorrelationGraphData>(
+      `/api/correlation/graph/${signalId}?depth=${depth}&k=${k}`
+    ),
 };
+

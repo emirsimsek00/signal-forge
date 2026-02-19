@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api, DashboardOverview } from "@/lib/api";
+import { useWebSocket } from "@/hooks/useWebSocket";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
-  Radio, AlertTriangle, Shield, TrendingUp, RefreshCw, Zap,
+  Radio, AlertTriangle, Shield, TrendingUp, RefreshCw, Zap, Wifi,
 } from "lucide-react";
 
 const TIER_COLORS: Record<string, string> = {
@@ -40,6 +41,15 @@ export default function OverviewPage() {
       setLoading(false);
     }
   }, []);
+
+  // WebSocket for real-time updates
+  const { connected, signalCount } = useWebSocket({
+    channels: ["signals"],
+    onSignal: () => {
+      // Auto-refresh dashboard when new signals arrive
+      fetchData();
+    },
+  });
 
   useEffect(() => {
     fetchData();
@@ -86,9 +96,20 @@ export default function OverviewPage() {
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Operations Overview
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Real-time multimodal signal intelligence
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-sm text-slate-500">
+              Real-time multimodal signal intelligence
+            </p>
+            <span className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full" style={{
+              background: connected ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
+              color: connected ? "#10b981" : "#ef4444",
+              border: `1px solid ${connected ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)"}`,
+            }}>
+              <Wifi size={10} />
+              {connected ? "Live" : "Offline"}
+              {signalCount > 0 && ` · ${signalCount} new`}
+            </span>
+          </div>
         </div>
         <button
           onClick={handleIngest}

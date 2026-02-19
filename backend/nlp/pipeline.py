@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Optional
 
 from backend.nlp.sentiment import SentimentAnalyzer, SentimentResult
 from backend.nlp.entities import EntityExtractor, Entity
@@ -59,3 +60,27 @@ class NLPPipeline:
                 embedding=embeddings[i],
             ))
         return results
+
+    # ── FAISS Index Operations ───────────────────────────────────
+
+    def add_to_index(self, signal_id: int, embedding: list[float]) -> None:
+        """Add a signal's embedding to the FAISS index."""
+        self.embedding_generator.add_to_index(signal_id, embedding)
+
+    def add_batch_to_index(self, signal_ids: list[int], embeddings: list[list[float]]) -> None:
+        """Add multiple signal embeddings to the FAISS index."""
+        self.embedding_generator.add_batch_to_index(signal_ids, embeddings)
+
+    def find_similar(self, embedding: list[float], k: int = 5) -> list[tuple[int, float]]:
+        """Find k most similar signals by embedding cosine similarity."""
+        return self.embedding_generator.find_similar(embedding, k)
+
+    def save_index(self) -> None:
+        self.embedding_generator.save_index()
+
+    def load_index(self) -> None:
+        self.embedding_generator.load_index()
+
+    @property
+    def index_size(self) -> int:
+        return self.embedding_generator.index_size

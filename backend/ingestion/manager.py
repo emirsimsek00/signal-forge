@@ -7,24 +7,59 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.ingestion.base import RawSignal
+from backend.config import settings
+from backend.ingestion.base import RawSignal, SignalSource
 from backend.ingestion.demo_data import DemoDataGenerator
+from backend.ingestion.reddit import RedditSource
+from backend.ingestion.news import NewsSource
 from backend.models.signal import Signal
 
 
 class IngestionManager:
-    """Orchestrates signal fetching, normalization, and persistence."""
+    """Orchestrates signal fetching, normalization, and persistence.
+
+    Automatically selects live sources when API keys are present,
+    falls back to DemoDataGenerator otherwise.
+    """
 
     def __init__(self) -> None:
-        self.sources = [DemoDataGenerator()]
+        self.sources: list[SignalSource] = self._build_sources()
+
+    @staticmethod
+    def _build_sources() -> list[SignalSource]:
+        """Register sources based on available API keys."""
+        sources: list[SignalSource] = []
+
+        # Reddit — available if client ID is set
+        if settings.reddit_client_id:
+            sources.append(RedditSource())
+            print("[IngestionManager] ✓ Reddit source enabled")
+        else:
+            print("[IngestionManager] ○ Reddit source skipped (no REDDIT_CLIENT_ID)")
+
+        # NewsAPI — available if key is set
+        if settings.newsapi_key:
+            sources.append(NewsSource())
+            print("[IngestionManager] ✓ NewsAPI source enabled")
+        else:
+            print("[IngestionManager] ○ NewsAPI source skipped (no NEWSAPI_KEY)")
+
+        # Always include demo data as a fallback/supplement
+        sources.append(DemoDataGenerator())
+        print("[IngestionManager] ✓ Demo data source enabled")
+
+        return sources
 
     async def ingest_all(self, session: AsyncSession, limit: int = 50) -> list[Signal]:
         """Fetch signals from all sources, normalize, and persist."""
         all_raw: list[RawSignal] = []
+        per_source = max(1, limit // max(len(self.sources), 1))
+
         for source in self.sources:
             try:
-                raw_signals = await source.fetch_signals(limit=limit)
+                raw_signals = await source.fetch_signals(limit=per_source)
                 all_raw.extend(raw_signals)
+                print(f"[IngestionManager] Fetched {len(raw_signals)} from {source.source_name}")
             except Exception as e:
                 print(f"[IngestionManager] Error fetching from {source.source_name}: {e}")
 
@@ -48,3 +83,13 @@ class IngestionManager:
             await session.refresh(sig)
 
         return db_signals
+
+    async def health(self) -> dict[str, bool]:
+        """Check connectivity for all sources."""
+        results = {}
+        for source in self.sources:
+            try:
+                results[source.source_name] = await source.health_check()
+            except Exception:
+                results[source.source_name] = False
+        return results

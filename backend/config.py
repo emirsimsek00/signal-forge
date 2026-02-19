@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # ML
     use_mock_ml: bool = Field(default=True, alias="USE_MOCK_ML")
 
+    # Ingestion
+    reddit_subreddits: str = Field(default="technology,sysadmin,netsec", alias="REDDIT_SUBREDDITS")
+    newsapi_categories: str = Field(default="technology,business", alias="NEWSAPI_CATEGORIES")
+    newsapi_keywords: str = Field(default="cybersecurity,outage,data breach", alias="NEWSAPI_KEYWORDS")
+    ingestion_interval_seconds: int = Field(default=300, alias="INGESTION_INTERVAL_SECONDS")
+
     @property
     def cors_origins_list(self) -> list[str]:
         return json.loads(self.cors_origins)
