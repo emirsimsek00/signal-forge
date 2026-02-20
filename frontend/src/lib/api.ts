@@ -301,6 +301,18 @@ export const api = {
   dashboardOverview: () => apiFetch<DashboardOverview>("/api/dashboard/overview"),
   dashboardTimeline: (limit = 20) =>
     apiFetch<{ timeline: TimelineEntry[] }>(`/api/dashboard/timeline?limit=${limit}`),
+  dashboardRiskTrend: (hours = 72) =>
+    apiFetch<{ hours: number; points: { timestamp: string; avg_risk: number; max_risk: number; count: number; high_risk_count: number }[] }>(
+      `/api/dashboard/risk-trend?hours=${hours}`
+    ),
+  dashboardSentimentDrift: (hours = 72) =>
+    apiFetch<{ hours: number; points: { timestamp: string; avg_sentiment: number; negative_ratio: number; positive_ratio: number; neutral_ratio: number; total: number }[] }>(
+      `/api/dashboard/sentiment-drift?hours=${hours}`
+    ),
+  dashboardIncidentFrequency: (days = 14) =>
+    apiFetch<{ days: number; points: { date: string; total: number; critical: number; high: number; medium: number; low: number }[] }>(
+      `/api/dashboard/incident-frequency?days=${days}`
+    ),
 
   // Signals
   listSignals: (page = 1, pageSize = 20, source?: string, riskTier?: string) => {

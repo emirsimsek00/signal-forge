@@ -274,3 +274,146 @@ async def dashboard_timeline(
 
     timeline.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
     return {"timeline": timeline[:limit]}
+
+
+@router.get("/dashboard/risk-trend")
+async def risk_trend(
+    hours: int = Query(72, ge=6, le=168),
+    session: AsyncSession = Depends(get_session),
+):
+    """Risk score trend over time — hourly averages with tier counts."""
+    now = datetime.utcnow()
+    window_start = now - timedelta(hours=hours)
+
+    dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+    if dialect_name == "sqlite":
+        hour_bucket_expr = func.strftime("%Y-%m-%d %H:00:00", Signal.timestamp)
+    else:
+        hour_bucket_expr = func.date_trunc("hour", Signal.timestamp)
+
+    result = await session.execute(
+        select(
+            hour_bucket_expr.label("bucket"),
+            func.avg(Signal.risk_score).label("avg_risk"),
+            func.max(Signal.risk_score).label("max_risk"),
+            func.count().label("count"),
+            func.sum(
+                func.case(
+                    (Signal.risk_tier.in_(["critical", "high"]), 1),
+                    else_=0,
+                )
+            ).label("high_risk_count"),
+        )
+        .where(Signal.timestamp >= window_start, Signal.risk_score.isnot(None))
+        .group_by("bucket")
+        .order_by("bucket")
+    )
+
+    points = []
+    for row in result.all():
+        if row.bucket is None:
+            continue
+        ts = row.bucket if isinstance(row.bucket, str) else row.bucket.isoformat()
+        points.append({
+            "timestamp": ts,
+            "avg_risk": round(float(row.avg_risk or 0), 4),
+            "max_risk": round(float(row.max_risk or 0), 4),
+            "count": int(row.count or 0),
+            "high_risk_count": int(row.high_risk_count or 0),
+        })
+
+    return {"hours": hours, "points": points}
+
+
+@router.get("/dashboard/sentiment-drift")
+async def sentiment_drift(
+    hours: int = Query(72, ge=6, le=168),
+    session: AsyncSession = Depends(get_session),
+):
+    """Sentiment trend over time — average sentiment and label distribution."""
+    now = datetime.utcnow()
+    window_start = now - timedelta(hours=hours)
+
+    dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+    if dialect_name == "sqlite":
+        hour_bucket_expr = func.strftime("%Y-%m-%d %H:00:00", Signal.timestamp)
+    else:
+        hour_bucket_expr = func.date_trunc("hour", Signal.timestamp)
+
+    result = await session.execute(
+        select(
+            hour_bucket_expr.label("bucket"),
+            func.avg(Signal.sentiment_score).label("avg_sentiment"),
+            func.count().label("total"),
+            func.sum(func.case((Signal.sentiment_label == "negative", 1), else_=0)).label("negative"),
+            func.sum(func.case((Signal.sentiment_label == "positive", 1), else_=0)).label("positive"),
+            func.sum(func.case((Signal.sentiment_label == "neutral", 1), else_=0)).label("neutral"),
+        )
+        .where(Signal.timestamp >= window_start, Signal.sentiment_score.isnot(None))
+        .group_by("bucket")
+        .order_by("bucket")
+    )
+
+    points = []
+    for row in result.all():
+        if row.bucket is None:
+            continue
+        ts = row.bucket if isinstance(row.bucket, str) else row.bucket.isoformat()
+        total = int(row.total or 1)
+        points.append({
+            "timestamp": ts,
+            "avg_sentiment": round(float(row.avg_sentiment or 0), 4),
+            "negative_ratio": round(int(row.negative or 0) / total, 3),
+            "positive_ratio": round(int(row.positive or 0) / total, 3),
+            "neutral_ratio": round(int(row.neutral or 0) / total, 3),
+            "total": total,
+        })
+
+    return {"hours": hours, "points": points}
+
+
+@router.get("/dashboard/incident-frequency")
+async def incident_frequency(
+    days: int = Query(14, ge=1, le=90),
+    session: AsyncSession = Depends(get_session),
+):
+    """Daily incident creation frequency with severity breakdown."""
+    now = datetime.utcnow()
+    window_start = now - timedelta(days=days)
+
+    dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+    if dialect_name == "sqlite":
+        day_bucket_expr = func.strftime("%Y-%m-%d", Incident.created_at)
+    else:
+        day_bucket_expr = func.date_trunc("day", Incident.created_at)
+
+    result = await session.execute(
+        select(
+            day_bucket_expr.label("bucket"),
+            func.count().label("total"),
+            func.sum(func.case((Incident.severity == "critical", 1), else_=0)).label("critical"),
+            func.sum(func.case((Incident.severity == "high", 1), else_=0)).label("high"),
+            func.sum(func.case((Incident.severity == "medium", 1), else_=0)).label("medium"),
+            func.sum(func.case((Incident.severity == "low", 1), else_=0)).label("low"),
+        )
+        .where(Incident.created_at >= window_start)
+        .group_by("bucket")
+        .order_by("bucket")
+    )
+
+    points = []
+    for row in result.all():
+        if row.bucket is None:
+            continue
+        ts = row.bucket if isinstance(row.bucket, str) else row.bucket.strftime("%Y-%m-%d")
+        points.append({
+            "date": ts,
+            "total": int(row.total or 0),
+            "critical": int(row.critical or 0),
+            "high": int(row.high or 0),
+            "medium": int(row.medium or 0),
+            "low": int(row.low or 0),
+        })
+
+    return {"days": days, "points": points}
+
