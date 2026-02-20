@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, AliasChoices
 
 
 class Settings(BaseSettings):
@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     reddit_client_id: str = Field(default="", alias="REDDIT_CLIENT_ID")
     reddit_client_secret: str = Field(default="", alias="REDDIT_CLIENT_SECRET")
     newsapi_key: str = Field(default="", alias="NEWSAPI_KEY")
+    zendesk_subdomain: str = Field(default="", alias="ZENDESK_SUBDOMAIN")
+    zendesk_email: str = Field(default="", alias="ZENDESK_EMAIL")
+    zendesk_api_key: str = Field(default="", alias="ZENDESK_API_KEY")
+    stripe_api_key: str = Field(default="", alias="STRIPE_API_KEY")
+    pagerduty_api_key: str = Field(default="", alias="PAGERDUTY_API_KEY")
+    alpha_vantage_key: str = Field(default="", alias="ALPHA_VANTAGE_KEY")
 
     # Risk Scoring Weights
     risk_weight_sentiment: float = Field(default=0.25, alias="RISK_WEIGHT_SENTIMENT")
@@ -40,11 +46,34 @@ class Settings(BaseSettings):
     reddit_subreddits: str = Field(default="technology,sysadmin,netsec", alias="REDDIT_SUBREDDITS")
     newsapi_categories: str = Field(default="technology,business", alias="NEWSAPI_CATEGORIES")
     newsapi_keywords: str = Field(default="cybersecurity,outage,data breach", alias="NEWSAPI_KEYWORDS")
-    ingestion_interval_seconds: int = Field(default=300, alias="INGESTION_INTERVAL_SECONDS")
+    zendesk_ticket_statuses: str = Field(default="new,open,pending,hold", alias="ZENDESK_TICKET_STATUSES")
+    stripe_event_types: str = Field(
+        default="charge.failed,invoice.payment_failed,payout.failed,charge.dispute.created",
+        alias="STRIPE_EVENT_TYPES",
+    )
+    pagerduty_service_ids: str = Field(default="", alias="PAGERDUTY_SERVICE_IDS")
+    alpha_vantage_symbols: str = Field(default="AAPL,MSFT,SPY", alias="ALPHA_VANTAGE_SYMBOLS")
+    ingestion_interval_seconds: int = Field(
+        default=300,
+        validation_alias=AliasChoices("INGESTION_INTERVAL_SECONDS", "INGESTION_INTERVAL"),
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return json.loads(self.cors_origins)
+        raw = (self.cors_origins or "").strip()
+        if not raw:
+            return []
+
+        # Supports JSON list format and comma-separated format.
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(origin).strip() for origin in parsed if str(origin).strip()]
+            except json.JSONDecodeError:
+                pass
+
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

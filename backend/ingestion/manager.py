@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +11,10 @@ from backend.ingestion.base import RawSignal, SignalSource
 from backend.ingestion.demo_data import DemoDataGenerator
 from backend.ingestion.reddit import RedditSource
 from backend.ingestion.news import NewsSource
+from backend.ingestion.zendesk import ZendeskSource
+from backend.ingestion.alpha_vantage import AlphaVantageSource
+from backend.ingestion.stripe import StripeSource
+from backend.ingestion.pagerduty import PagerDutySource
 from backend.models.signal import Signal
 
 
@@ -43,6 +46,34 @@ class IngestionManager:
             print("[IngestionManager] ✓ NewsAPI source enabled")
         else:
             print("[IngestionManager] ○ NewsAPI source skipped (no NEWSAPI_KEY)")
+
+        # Zendesk — available if subdomain + key are set
+        if settings.zendesk_subdomain and settings.zendesk_api_key:
+            sources.append(ZendeskSource())
+            print("[IngestionManager] ✓ Zendesk source enabled")
+        else:
+            print("[IngestionManager] ○ Zendesk source skipped (no ZENDESK_SUBDOMAIN/API_KEY)")
+
+        # Stripe — available if key is set
+        if settings.stripe_api_key:
+            sources.append(StripeSource())
+            print("[IngestionManager] ✓ Stripe source enabled")
+        else:
+            print("[IngestionManager] ○ Stripe source skipped (no STRIPE_API_KEY)")
+
+        # PagerDuty — available if key is set
+        if settings.pagerduty_api_key:
+            sources.append(PagerDutySource())
+            print("[IngestionManager] ✓ PagerDuty source enabled")
+        else:
+            print("[IngestionManager] ○ PagerDuty source skipped (no PAGERDUTY_API_KEY)")
+
+        # Alpha Vantage — available if key is set
+        if settings.alpha_vantage_key:
+            sources.append(AlphaVantageSource())
+            print("[IngestionManager] ✓ Alpha Vantage source enabled")
+        else:
+            print("[IngestionManager] ○ Alpha Vantage source skipped (no ALPHA_VANTAGE_KEY)")
 
         # Always include demo data as a fallback/supplement
         sources.append(DemoDataGenerator())

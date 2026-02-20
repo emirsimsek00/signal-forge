@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from backend.config import settings
@@ -48,6 +47,7 @@ class RiskScorer:
         ticket_volume_spike: float | None = None,
         revenue_deviation: float | None = None,
         engagement_surge: float | None = None,
+        source: str | None = None,
         metadata: dict | None = None,
     ) -> RiskResult:
         """Compute composite risk from individual signal components.
@@ -69,6 +69,48 @@ class RiskScorer:
                 t_risk = 0.7
             elif t_risk == 0.0 and metadata.get("urgency") == "medium":
                 t_risk = 0.4
+
+            # Generic numeric signals often available in financial/system metadata.
+            delta_pct = abs(self._to_float(metadata.get("delta_pct")))
+            if delta_pct > 0 and r_risk == 0.0:
+                r_risk = min(1.0, delta_pct / 10.0)
+
+            metric_name = str(metadata.get("metric_name") or "").lower()
+            if metric_name and a_risk == 0.0:
+                if "latency" in metric_name or "error" in metric_name:
+                    value = self._to_float(metadata.get("value"))
+                    if value > 0:
+                        # Light normalization for typical service metrics.
+                        a_risk = min(1.0, value / 1000.0)
+
+            # Source-specific risk mapping for incident ops/payment systems.
+            src = (source or "").lower()
+            if src == "pagerduty":
+                status = str(metadata.get("status") or "").lower()
+                urgency = str(metadata.get("urgency") or "").lower()
+                if status in {"triggered", "acknowledged"}:
+                    a_risk = max(a_risk, 0.75)
+                    e_risk = max(e_risk, 0.5)
+                if urgency == "high":
+                    t_risk = max(t_risk, 0.85)
+                    a_risk = max(a_risk, 0.65)
+                elif urgency == "low":
+                    t_risk = max(t_risk, 0.2)
+
+            elif src == "stripe":
+                event_type = str(metadata.get("event_type") or "").lower()
+                amount = abs(self._to_float(metadata.get("amount")))
+                if any(k in event_type for k in ("failed", "dispute", "fraud", "chargeback")):
+                    a_risk = max(a_risk, 0.65)
+                    r_risk = max(r_risk, 0.55)
+                    t_risk = max(t_risk, 0.5)
+                if any(k in event_type for k in ("dispute", "fraud", "chargeback")):
+                    a_risk = max(a_risk, 0.9)
+                    r_risk = max(r_risk, 0.8)
+                    e_risk = max(e_risk, 0.55)
+                if amount > 0:
+                    # Scale large financial impact events into revenue component.
+                    r_risk = max(r_risk, min(1.0, amount / 20000.0))
 
         # Weighted composite
         composite = (
@@ -155,3 +197,10 @@ class RiskScorer:
         parts.append(f"Composite score: {composite:.2f} → {tier.upper()} tier")
 
         return ". ".join(parts) + "."
+
+    @staticmethod
+    def _to_float(value: object) -> float:
+        try:
+            return float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 0.0
