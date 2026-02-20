@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+
+signalforge.db
+*.sqlite
+*.db
+
+frontend/node_modules
+frontend/.next
+
+backend/tests
+
+.DS_Store

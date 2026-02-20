@@ -1,27 +1,54 @@
-version: "3.9"
-
 services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: signalforge-backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./signalforge.db
+      - USE_MOCK_ML=true
+      - CORS_ORIGINS=["http://localhost","http://localhost:80","http://localhost:3000"]
+      - INGESTION_INTERVAL_SECONDS=300
+      # Uncomment and set for live data:
+      # - REDDIT_CLIENT_ID=
+      # - REDDIT_CLIENT_SECRET=
+      # - NEWSAPI_KEY=
     volumes:
-      - ./backend:/app/backend
-    depends_on:
-      - redis
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+      - db-data:/app
+    expose:
+      - "8000"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: signalforge-frontend
+    restart: unless-stopped
     environment:
-      - NEXT_PUBLIC_API_URL=http://api:8000
+      - NEXT_PUBLIC_API_URL=/api
+    expose:
+      - "3000"
     depends_on:
-      - api
+      backend:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    container_name: signalforge-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  db-data:
