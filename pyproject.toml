@@ -1,6 +1,6 @@
 [project]
 name = "signalforge"
-version = "0.3.0"
+version = "0.4.0"
 description = "Multimodal AI Operations Copilot"
 requires-python = ">=3.9"
 dependencies = [
@@ -14,6 +14,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "numpy>=1.26.0",
     "pandas>=2.1.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose[cryptography]>=3.3.0",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +25,12 @@ ml = [
     "torch>=2.1.0",
     "faiss-cpu>=1.7.4",
     "sentence-transformers>=2.3.0",
+]
+llm = [
+    "openai>=1.10.0",
+]
+postgres = [
+    "asyncpg>=0.29.0",
 ]
 dev = [
     "pytest>=7.4.0",
