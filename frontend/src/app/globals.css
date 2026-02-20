@@ -154,6 +154,14 @@ body {
   background: rgba(16, 185, 129, 0.12);
   color: #34d399;
 }
+.source-stripe {
+  background: rgba(20, 184, 166, 0.12);
+  color: #14b8a6;
+}
+.source-pagerduty {
+  background: rgba(249, 115, 22, 0.12);
+  color: #f97316;
+}
 .source-system {
   background: rgba(139, 92, 246, 0.12);
   color: #a78bfa;

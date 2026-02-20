@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +34,7 @@ class SignalCorrelator:
 
     def __init__(self, pipeline: NLPPipeline) -> None:
         self.pipeline = pipeline
+        self._last_indexed_signal_id = 0
 
     async def correlate(
         self,
@@ -50,11 +51,13 @@ class SignalCorrelator:
         if not target:
             return []
 
+        # Ensure index is populated from DB embeddings so correlation survives restarts.
+        await self._sync_index_from_db(session)
+
         correlations: dict[int, CorrelationResult] = {}
 
         # Strategy 1: Embedding similarity
         if target.embedding_json:
-            import json
             embedding = json.loads(target.embedding_json)
             similar = self.pipeline.find_similar(embedding, k=k + 1)
             for related_id, sim_score in similar:
@@ -108,7 +111,6 @@ class SignalCorrelator:
 
         # Strategy 3: Entity co-occurrence
         if target.entities_json:
-            import json
             try:
                 target_entities = json.loads(target.entities_json)
                 target_entity_texts = {e.get("text", "").lower() for e in target_entities if isinstance(e, dict)}
@@ -151,3 +153,36 @@ class SignalCorrelator:
         # Sort by score descending, limit to top k
         sorted_results = sorted(correlations.values(), key=lambda c: c.score, reverse=True)
         return sorted_results[:k]
+
+    async def _sync_index_from_db(self, session: AsyncSession) -> None:
+        """Incrementally load stored embeddings from DB into the in-memory vector index."""
+        stmt = (
+            select(Signal.id, Signal.embedding_json)
+            .where(
+                Signal.id > self._last_indexed_signal_id,
+                Signal.embedding_json.isnot(None),
+            )
+            .order_by(Signal.id.asc())
+        )
+        result = await session.execute(stmt)
+
+        signal_ids: list[int] = []
+        embeddings: list[list[float]] = []
+        max_seen = self._last_indexed_signal_id
+
+        for signal_id, embedding_json in result.all():
+            max_seen = max(max_seen, int(signal_id))
+            if not embedding_json:
+                continue
+            try:
+                embedding = json.loads(embedding_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(embedding, list) and embedding:
+                signal_ids.append(int(signal_id))
+                embeddings.append(embedding)
+
+        if signal_ids:
+            self.pipeline.add_batch_to_index(signal_ids, embeddings)
+
+        self._last_indexed_signal_id = max_seen

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { api, DashboardOverview } from "@/lib/api";
+import { api, DashboardOverview, ForecastResponse } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
@@ -22,25 +22,39 @@ const SOURCE_COLORS: Record<string, string> = {
   reddit: "#ff6b35",
   news: "#22d3ee",
   zendesk: "#34d399",
+  stripe: "#14b8a6",
+  pagerduty: "#f97316",
   system: "#a78bfa",
   financial: "#fbbf24",
 };
 
 export default function OverviewPage() {
   const [data, setData] = useState<DashboardOverview | null>(null);
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null);
+  const [forecastMetric, setForecastMetric] = useState("mrr");
+  const [availableMetrics, setAvailableMetrics] = useState<string[]>([
+    "mrr",
+    "churn_rate",
+    "api_latency_ms",
+    "cpu_usage",
+  ]);
   const [loading, setLoading] = useState(true);
   const [ingesting, setIngesting] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const overview = await api.dashboardOverview();
+      const [overview, forecastResult] = await Promise.all([
+        api.dashboardOverview(),
+        api.forecast(forecastMetric, 8, 168),
+      ]);
       setData(overview);
+      setForecast(forecastResult);
     } catch (e) {
       console.error("Failed to fetch dashboard:", e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [forecastMetric]);
 
   // WebSocket for real-time updates
   const { connected, signalCount } = useWebSocket({
@@ -54,6 +68,21 @@ export default function OverviewPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    api.forecastMetrics(168)
+      .then((result) => {
+        if (result.metrics.length > 0) {
+          setAvailableMetrics(result.metrics);
+          if (!result.metrics.includes(forecastMetric)) {
+            setForecastMetric(result.metrics[0]);
+          }
+        }
+      })
+      .catch(() => {
+        // Keep defaults when metrics endpoint is unavailable.
+      });
+  }, [forecastMetric]);
 
   const handleIngest = async () => {
     setIngesting(true);
@@ -87,6 +116,20 @@ export default function OverviewPage() {
     : [];
 
   const sourceData = data?.source_distribution || [];
+  const observed = forecast?.observed_points.slice(-16) || [];
+  const predicted = forecast?.predicted_values || [];
+  const forecastSeries = [
+    ...observed.map((point) => ({
+      time: new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      observed: point.value,
+      predicted: null as number | null,
+    })),
+    ...predicted.map((point) => ({
+      time: new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      observed: null as number | null,
+      predicted: point.value,
+    })),
+  ];
 
   return (
     <div className="space-y-6">
@@ -322,6 +365,66 @@ export default function OverviewPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Forecast Panel */}
+      <div className="glass-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Metric Forecast</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Projection for the next {forecast?.predicted_values.length ?? 0} intervals
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {forecast && (
+              <span className="text-[0.65rem] text-slate-500">
+                {forecast.method} · {forecast.trend} · {(forecast.confidence * 100).toFixed(0)}% confidence
+              </span>
+            )}
+            <select
+              value={forecastMetric}
+              onChange={(e) => setForecastMetric(e.target.value)}
+              className="text-xs rounded-lg px-2.5 py-1.5 border border-white/10 bg-white/5 text-slate-300"
+            >
+              {availableMetrics.map((metric) => (
+                <option key={metric} value={metric}>
+                  {metric}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {forecastSeries.length === 0 ? (
+          <div className="text-sm text-slate-500 py-10 text-center">No forecast data available for this metric.</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={forecastSeries}>
+              <XAxis
+                dataKey="time"
+                tick={{ fontSize: 11, fill: "#64748b" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "#64748b" }}
+                axisLine={false}
+                tickLine={false}
+                width={40}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: "#1e293b",
+                  border: "1px solid rgba(99, 102, 241, 0.3)",
+                  borderRadius: 10,
+                  fontSize: 12,
+                }}
+              />
+              <Line type="monotone" dataKey="observed" stroke="#22d3ee" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="predicted" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 4" dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );

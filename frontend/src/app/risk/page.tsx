@@ -14,7 +14,7 @@ const TIER_COLORS: Record<string, string> = {
     low: "#10b981",
 };
 
-const SOURCES = ["reddit", "news", "zendesk", "system", "financial"];
+const SOURCES = ["reddit", "news", "zendesk", "stripe", "pagerduty", "system", "financial"];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 function getHeatColor(score: number): string {

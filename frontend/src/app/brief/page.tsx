@@ -1,24 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, DashboardOverview, RiskOverview } from "@/lib/api";
-import { FileText, Shield, AlertTriangle, Lightbulb, ArrowRight } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { api, ExecutiveBrief } from "@/lib/api";
+import { FileText, Shield, AlertTriangle, Lightbulb, ArrowRight, RefreshCw } from "lucide-react";
+
+type ToneMode = "executive_concise" | "technical_detailed" | "customer_facing";
+
+const TONE_LABELS: Record<ToneMode, string> = {
+    executive_concise: "Executive Concise",
+    technical_detailed: "Technical Detailed",
+    customer_facing: "Customer Facing",
+};
 
 export default function BriefPage() {
-    const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
-    const [risk, setRisk] = useState<RiskOverview | null>(null);
+    const [brief, setBrief] = useState<ExecutiveBrief | null>(null);
+    const [tone, setTone] = useState<ToneMode>("executive_concise");
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
-    useEffect(() => {
-        Promise.all([api.dashboardOverview(), api.riskOverview()])
-            .then(([d, r]) => {
-                setDashboard(d);
-                setRisk(r);
-            })
-            .finally(() => setLoading(false));
+    const fetchBrief = useCallback(async (toneMode: ToneMode) => {
+        try {
+            const data = await api.generateBrief(toneMode, 24);
+            setBrief(data);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     }, []);
 
-    if (loading) {
+    useEffect(() => {
+        setLoading(true);
+        fetchBrief(tone);
+    }, [tone, fetchBrief]);
+
+    const refresh = async () => {
+        setRefreshing(true);
+        await fetchBrief(tone);
+    };
+
+    if (loading || !brief) {
         return (
             <div className="space-y-6">
                 <div className="h-10 w-64 skeleton" />
@@ -28,43 +48,6 @@ export default function BriefPage() {
         );
     }
 
-    const topSource = dashboard?.source_distribution[0];
-    const criticalSignals = risk?.top_risks.filter((r) => r.risk_tier === "critical") || [];
-    const highSignals = risk?.top_risks.filter((r) => r.risk_tier === "high") || [];
-
-    // Generate dynamic brief sections
-    const situationOverview = `
-    SignalForge has analyzed ${dashboard?.total_signals.toLocaleString()} signals across ${dashboard?.source_distribution.length} active sources.
-    The current average risk score is ${risk?.average_score.toFixed(3)} (${risk?.trend} trend).
-    ${risk?.critical_count || 0} critical and ${risk?.high_count || 0} high-severity signals have been detected.
-    ${dashboard?.active_incidents || 0} incidents are currently active.
-  `.trim().replace(/\s+/g, ' ');
-
-    const riskIndicators = [
-        risk?.critical_count ? `${risk.critical_count} critical-tier signal(s) detected requiring immediate review` : null,
-        risk?.high_count ? `${risk.high_count} high-tier signal(s) with elevated risk scores` : null,
-        topSource ? `Highest signal volume from ${topSource.source} (${topSource.count} signals)` : null,
-        dashboard?.avg_risk_score && dashboard.avg_risk_score > 0.5 ? "Average risk score exceeds 0.50 — elevated operational risk" : null,
-        dashboard?.avg_risk_score && dashboard.avg_risk_score <= 0.25 ? "Overall risk profile is within acceptable range" : null,
-    ].filter(Boolean);
-
-    const hypotheses = [
-        criticalSignals.length > 0 ? `Critical signals from ${[...new Set(criticalSignals.map(s => s.source))].join(", ")} sources may indicate a systemic issue` : null,
-        "Negative sentiment spikes in social channels may precede support ticket volume increases",
-        "System metric anomalies should be cross-referenced with recent deployments",
-        highSignals.length > 2 ? "Multiple high-severity signals suggest correlated upstream event" : "Signal patterns are within expected variance",
-    ].filter(Boolean);
-
-    const recommendations = [
-        risk?.critical_count ? "Prioritize investigation of critical-tier signals immediately" : null,
-        "Run correlation analysis across sources to identify linked events",
-        "Schedule executive review if risk trend continues upward",
-        "Consider adjusting alert thresholds based on current baseline",
-        dashboard?.active_incidents ? "Triage active incidents and assign investigation owners" : null,
-    ].filter(Boolean);
-
-    const confidenceScore = Math.max(0.6, Math.min(0.95, 1 - (risk?.average_score || 0)));
-
     return (
         <div className="space-y-6 max-w-4xl">
             <div className="flex items-center justify-between">
@@ -73,18 +56,44 @@ export default function BriefPage() {
                     <p className="text-sm text-slate-500 mt-1">AI-generated intelligence summary</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <span className="text-xs text-slate-500">Confidence:</span>
-                    <div className="w-24 h-2 rounded-full bg-white/5 overflow-hidden">
-                        <div
-                            className="h-full rounded-full"
-                            style={{
-                                width: `${confidenceScore * 100}%`,
-                                background: confidenceScore > 0.8 ? "var(--accent-emerald)" : confidenceScore > 0.6 ? "var(--accent-amber)" : "var(--accent-rose)",
-                            }}
-                        />
-                    </div>
-                    <span className="text-xs font-mono text-slate-400">{(confidenceScore * 100).toFixed(0)}%</span>
+                    <select
+                        value={tone}
+                        onChange={(e) => setTone(e.target.value as ToneMode)}
+                        className="text-xs rounded-lg px-3 py-2 border border-white/10 bg-white/5 text-slate-300"
+                    >
+                        {Object.entries(TONE_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>
+                                {label}
+                            </option>
+                        ))}
+                    </select>
+                    <button onClick={refresh} className="btn-primary flex items-center gap-2" disabled={refreshing}>
+                        <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+                        Refresh
+                    </button>
                 </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">Confidence:</span>
+                <div className="w-32 h-2 rounded-full bg-white/5 overflow-hidden">
+                    <div
+                        className="h-full rounded-full"
+                        style={{
+                            width: `${brief.confidence_score * 100}%`,
+                            background:
+                                brief.confidence_score > 0.8
+                                    ? "var(--accent-emerald)"
+                                    : brief.confidence_score > 0.6
+                                        ? "var(--accent-amber)"
+                                        : "var(--accent-rose)",
+                        }}
+                    />
+                </div>
+                <span className="text-xs font-mono text-slate-400">{(brief.confidence_score * 100).toFixed(0)}%</span>
+                <span className="text-xs text-slate-600 ml-2">
+                    Generated {new Date(brief.generated_at).toLocaleString()}
+                </span>
             </div>
 
             {/* Situation Overview */}
@@ -94,7 +103,7 @@ export default function BriefPage() {
                     <FileText className="w-4 h-4 text-indigo-400" />
                     <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Situation Overview</h2>
                 </div>
-                <p className="text-sm text-slate-300 leading-relaxed">{situationOverview}</p>
+                <p className="text-sm text-slate-300 leading-relaxed">{brief.situation_overview}</p>
             </div>
 
             {/* Key Risk Indicators */}
@@ -104,7 +113,7 @@ export default function BriefPage() {
                     <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Key Risk Indicators</h2>
                 </div>
                 <div className="space-y-3">
-                    {riskIndicators.map((indicator, i) => (
+                    {brief.key_risk_indicators.map((indicator, i) => (
                         <div key={i} className="flex items-start gap-3">
                             <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5" style={{ background: "rgba(245, 158, 11, 0.1)" }}>
                                 <span className="text-[0.65rem] font-bold text-amber-400">{i + 1}</span>
@@ -122,7 +131,7 @@ export default function BriefPage() {
                     <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Root-Cause Hypotheses</h2>
                 </div>
                 <div className="space-y-3">
-                    {hypotheses.map((h, i) => (
+                    {brief.root_cause_hypotheses.map((h, i) => (
                         <div key={i} className="flex items-start gap-3">
                             <ArrowRight className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
                             <p className="text-sm text-slate-300">{h}</p>
@@ -138,7 +147,7 @@ export default function BriefPage() {
                     <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Recommended Actions</h2>
                 </div>
                 <div className="space-y-3">
-                    {recommendations.map((r, i) => (
+                    {brief.recommended_actions.map((r, i) => (
                         <div key={i} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: "rgba(16, 185, 129, 0.05)" }}>
                             <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: "rgba(16, 185, 129, 0.15)" }}>
                                 <span className="text-[0.65rem] font-bold text-emerald-400">{i + 1}</span>
@@ -149,11 +158,17 @@ export default function BriefPage() {
                 </div>
             </div>
 
-            {/* Footer */}
-            <div className="text-center py-4">
-                <p className="text-xs text-slate-600">
-                    Generated by SignalForge AI · Executive Concise Mode · {new Date().toLocaleString()}
-                </p>
+            <div className="glass-card p-6">
+                <h2 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Top Risk Signals</h2>
+                <div className="space-y-2">
+                    {brief.top_risk_signals.map((signal) => (
+                        <div key={signal.id} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: "rgba(255, 255, 255, 0.02)" }}>
+                            <span className={`source-badge source-${signal.source}`}>{signal.source}</span>
+                            <span className="flex-1 text-sm text-slate-300 truncate">{signal.title}</span>
+                            <span className={`badge badge-${signal.risk_tier}`}>{signal.risk_score.toFixed(3)}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );

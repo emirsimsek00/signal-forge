@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, desc, case
+from sqlalchemy import select, func, desc, cast, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
 from backend.models.signal import Signal
 from backend.models.incident import Incident
-from backend.models.risk import RiskOverview, RiskHeatmapCell
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -22,6 +20,8 @@ async def dashboard_overview(
     session: AsyncSession = Depends(get_session),
 ):
     """Aggregated dashboard overview — KPI cards data."""
+    now = datetime.utcnow()
+
     # Total signals
     total_signals = (
         await session.execute(select(func.count()).select_from(Signal))
@@ -43,15 +43,16 @@ async def dashboard_overview(
         )
     ).scalar() or 0.0
 
-    # Risk tier distribution
-    tier_counts = {}
-    for tier in ["critical", "high", "moderate", "low"]:
-        count = (
-            await session.execute(
-                select(func.count()).select_from(Signal).where(Signal.risk_tier == tier)
-            )
-        ).scalar() or 0
-        tier_counts[tier] = count
+    # Risk tier distribution (single grouped query)
+    tier_counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
+    tier_result = await session.execute(
+        select(Signal.risk_tier, func.count().label("count"))
+        .where(Signal.risk_tier.isnot(None))
+        .group_by(Signal.risk_tier)
+    )
+    for tier, count in tier_result.all():
+        if tier in tier_counts:
+            tier_counts[tier] = int(count)
 
     # Source distribution
     source_query = (
@@ -82,23 +83,46 @@ async def dashboard_overview(
         for s in recent.scalars().all()
     ]
 
-    # Signals per hour (last 24h)
+    # Signals per hour (last 24h) via grouped query
+    window_start = now - timedelta(hours=24)
+    dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+    if dialect_name == "sqlite":
+        hour_bucket_expr = func.strftime("%Y-%m-%d %H:00:00", Signal.timestamp)
+    else:
+        hour_bucket_expr = func.date_trunc("hour", Signal.timestamp)
+
+    hourly_result = await session.execute(
+        select(
+            hour_bucket_expr.label("hour_bucket"),
+            func.count().label("count"),
+        )
+        .where(Signal.timestamp >= window_start)
+        .group_by("hour_bucket")
+        .order_by("hour_bucket")
+    )
+
+    hourly_counts: dict[str, int] = {}
+    for bucket, count in hourly_result.all():
+        if bucket is None:
+            continue
+        if isinstance(bucket, str):
+            key = bucket[:13]  # YYYY-MM-DD HH
+        else:
+            key = bucket.strftime("%Y-%m-%d %H")
+        hourly_counts[key] = int(count)
+
     signals_per_hour = []
-    now = datetime.utcnow()
-    for hours_ago in range(24, 0, -1):
-        start = now - timedelta(hours=hours_ago)
-        end = now - timedelta(hours=hours_ago - 1)
-        count = (
-            await session.execute(
-                select(func.count())
-                .select_from(Signal)
-                .where(Signal.timestamp >= start, Signal.timestamp < end)
-            )
-        ).scalar() or 0
-        signals_per_hour.append({
-            "hour": start.strftime("%H:00"),
-            "count": count,
-        })
+    for hours_ago in range(23, -1, -1):
+        hour_start = (now - timedelta(hours=hours_ago)).replace(
+            minute=0, second=0, microsecond=0
+        )
+        key = hour_start.strftime("%Y-%m-%d %H")
+        signals_per_hour.append(
+            {
+                "hour": hour_start.strftime("%H:00"),
+                "count": hourly_counts.get(key, 0),
+            }
+        )
 
     return {
         "total_signals": total_signals,
@@ -122,13 +146,15 @@ async def risk_overview(
         )
     ).scalar() or 0.0
 
-    tier_counts = {}
-    for tier in ["critical", "high", "moderate", "low"]:
-        tier_counts[tier] = (
-            await session.execute(
-                select(func.count()).select_from(Signal).where(Signal.risk_tier == tier)
-            )
-        ).scalar() or 0
+    tier_counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
+    tier_result = await session.execute(
+        select(Signal.risk_tier, func.count().label("count"))
+        .where(Signal.risk_tier.isnot(None))
+        .group_by(Signal.risk_tier)
+    )
+    for tier, count in tier_result.all():
+        if tier in tier_counts:
+            tier_counts[tier] = int(count)
 
     total_signals = sum(tier_counts.values())
 
@@ -169,30 +195,42 @@ async def risk_heatmap(
     session: AsyncSession = Depends(get_session),
 ):
     """Risk heatmap data — source × hour matrix."""
-    signals_result = await session.execute(
-        select(Signal)
-        .where(Signal.risk_score.isnot(None))
-        .order_by(Signal.timestamp)
-    )
-    signals = signals_result.scalars().all()
+    dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+    if dialect_name == "sqlite":
+        hour_expr = cast(func.strftime("%H", Signal.timestamp), Integer)
+    else:
+        hour_expr = cast(func.extract("hour", Signal.timestamp), Integer)
 
-    # Build heatmap grid
-    heatmap: dict[tuple[str, int], list[float]] = defaultdict(list)
-    for s in signals:
-        hour = s.timestamp.hour if s.timestamp else 0
-        heatmap[(s.source, hour)].append(s.risk_score or 0)
+    aggregated = await session.execute(
+        select(
+            Signal.source.label("source"),
+            hour_expr.label("hour"),
+            func.avg(Signal.risk_score).label("avg_score"),
+            func.count().label("count"),
+        )
+        .where(Signal.risk_score.isnot(None))
+        .group_by("source", "hour")
+        .order_by("source", "hour")
+    )
 
     cells = []
-    for (source, hour), scores in heatmap.items():
-        avg_score = sum(scores) / len(scores)
-        tier = "critical" if avg_score >= 0.75 else "high" if avg_score >= 0.5 else "moderate" if avg_score >= 0.25 else "low"
-        cells.append({
-            "source": source,
-            "hour": hour,
-            "score": round(avg_score, 3),
-            "tier": tier,
-            "count": len(scores),
-        })
+    for row in aggregated.all():
+        avg_score = float(row.avg_score or 0)
+        tier = (
+            "critical" if avg_score >= 0.75
+            else "high" if avg_score >= 0.5
+            else "moderate" if avg_score >= 0.25
+            else "low"
+        )
+        cells.append(
+            {
+                "source": row.source,
+                "hour": int(row.hour or 0),
+                "score": round(avg_score, 3),
+                "tier": tier,
+                "count": int(row.count or 0),
+            }
+        )
 
     return {"cells": cells}
 

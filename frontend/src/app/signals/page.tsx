@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, Signal, SignalListResponse } from "@/lib/api";
 import { Search, Filter, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
-const SOURCES = ["all", "reddit", "news", "zendesk", "system", "financial"];
+const SOURCES = ["all", "reddit", "news", "zendesk", "stripe", "pagerduty", "system", "financial"];
 const RISK_TIERS = ["all", "critical", "high", "moderate", "low"];
 
 export default function SignalsPage() {

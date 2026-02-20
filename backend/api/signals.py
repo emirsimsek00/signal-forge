@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.database import get_session
 from backend.models.signal import Signal, SignalResponse, SignalListResponse
+from backend.models.risk import RiskAssessment
 from backend.ingestion.manager import IngestionManager
 from backend.nlp.pipeline import NLPPipeline
 from backend.risk.scorer import RiskScorer
@@ -91,18 +92,40 @@ async def trigger_ingestion(
             sig.entities_json = json.dumps([
                 {"text": e.text, "label": e.label} for e in processed.entities
             ])
-            sig.embedding_json = json.dumps(processed.embedding[:10])  # Store truncated
+            # Keep full embedding for correlation + similarity search.
+            sig.embedding_json = json.dumps(processed.embedding)
+            nlp_pipeline.add_to_index(sig.id, processed.embedding)
 
             # Parse metadata for risk context
-            metadata = json.loads(sig.metadata_json) if sig.metadata_json else {}
+            metadata = {}
+            if sig.metadata_json:
+                try:
+                    metadata = json.loads(sig.metadata_json)
+                except json.JSONDecodeError:
+                    metadata = {}
 
             # 3. Risk scoring
             risk = risk_scorer.score(
                 sentiment_score=processed.sentiment.raw_score,
+                source=sig.source,
                 metadata=metadata,
             )
             sig.risk_score = risk.composite_score
             sig.risk_tier = risk.tier
+
+            session.add(
+                RiskAssessment(
+                    signal_id=sig.id,
+                    composite_score=risk.composite_score,
+                    sentiment_component=risk.sentiment_component,
+                    anomaly_component=risk.anomaly_component,
+                    ticket_volume_component=risk.ticket_volume_component,
+                    revenue_component=risk.revenue_component,
+                    engagement_component=risk.engagement_component,
+                    tier=risk.tier,
+                    explanation=risk.explanation,
+                )
+            )
 
             processed_count += 1
         except Exception as e:

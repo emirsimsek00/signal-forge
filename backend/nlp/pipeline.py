@@ -75,6 +75,10 @@ class NLPPipeline:
         """Find k most similar signals by embedding cosine similarity."""
         return self.embedding_generator.find_similar(embedding, k)
 
+    def search_similar(self, embedding: list[float], k: int = 5) -> list[tuple[int, float]]:
+        """Backward-compatible alias for similarity search."""
+        return self.find_similar(embedding, k)
+
     def save_index(self) -> None:
         self.embedding_generator.save_index()
 

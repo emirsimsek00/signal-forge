@@ -62,18 +62,33 @@ class EmbeddingGenerator:
     def add_to_index(self, signal_id: int, embedding: list[float]) -> None:
         """Add a signal embedding to the FAISS index."""
         self._ensure_index()
-        vec = np.array([embedding], dtype=np.float32)
+        try:
+            vec = self._coerce_embedding(embedding).reshape(1, -1)
+        except ValueError:
+            return
         self._index.add(vec)
         self._id_map.append(signal_id)
 
     def add_batch_to_index(self, signal_ids: list[int], embeddings: list[list[float]]) -> None:
         """Add multiple signal embeddings to the FAISS index."""
-        if not embeddings:
+        if not embeddings or not signal_ids:
             return
         self._ensure_index()
-        vecs = np.array(embeddings, dtype=np.float32)
+        vecs_list: list[np.ndarray] = []
+        valid_signal_ids: list[int] = []
+        for signal_id, embedding in zip(signal_ids, embeddings):
+            try:
+                vecs_list.append(self._coerce_embedding(embedding))
+                valid_signal_ids.append(signal_id)
+            except ValueError:
+                continue
+
+        if not vecs_list:
+            return
+
+        vecs = np.stack(vecs_list).astype(np.float32)
         self._index.add(vecs)
-        self._id_map.extend(signal_ids)
+        self._id_map.extend(valid_signal_ids)
 
     def find_similar(self, embedding: list[float], k: int = 5) -> list[tuple[int, float]]:
         """Find k most similar signals by embedding.
@@ -85,7 +100,10 @@ class EmbeddingGenerator:
             return []
 
         k = min(k, self._index.ntotal)
-        vec = np.array([embedding], dtype=np.float32)
+        try:
+            vec = self._coerce_embedding(embedding).reshape(1, -1)
+        except ValueError:
+            return []
         scores, indices = self._index.search(vec, k)
 
         results = []
@@ -125,6 +143,22 @@ class EmbeddingGenerator:
         vec = [rng.gauss(0, 1) for _ in range(EMBEDDING_DIM)]
         norm = sum(v * v for v in vec) ** 0.5
         return [v / norm for v in vec]
+
+    def _coerce_embedding(self, embedding: list[float]) -> np.ndarray:
+        """Normalize, reshape, and dimension-correct embeddings for stable indexing/search."""
+        vec = np.asarray(embedding, dtype=np.float32).flatten()
+        if vec.size == 0:
+            raise ValueError("empty embedding")
+
+        if vec.size > EMBEDDING_DIM:
+            vec = vec[:EMBEDDING_DIM]
+        elif vec.size < EMBEDDING_DIM:
+            vec = np.pad(vec, (0, EMBEDDING_DIM - vec.size))
+
+        norm = float(np.linalg.norm(vec))
+        if norm > 0:
+            vec = vec / norm
+        return vec.astype(np.float32, copy=False)
 
 
 class _InMemoryIndex:
