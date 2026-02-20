@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
+
+from sqlalchemy import delete
 
 from backend.config import settings
 from backend.database import async_session
@@ -13,9 +16,12 @@ from backend.ingestion.manager import IngestionManager
 from backend.nlp.pipeline import NLPPipeline
 from backend.risk.scorer import RiskScorer
 from backend.models.risk import RiskAssessment
+from backend.models.signal import Signal
 from backend.api.websocket import manager as ws_manager
 from backend.anomaly.detector import detector as anomaly_detector
 from backend.incident_manager import auto_incident_manager
+
+logger = logging.getLogger("signalforge.scheduler")
 
 
 class BackgroundScheduler:
@@ -44,7 +50,7 @@ class BackgroundScheduler:
             return
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        print(f"[Scheduler] Started (interval={self.interval}s)")
+        logger.info(f"Scheduler started (interval={self.interval}s)")
 
     async def stop(self) -> None:
         """Stop the background scheduler gracefully."""
@@ -55,7 +61,7 @@ class BackgroundScheduler:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        print("[Scheduler] Stopped")
+        logger.info("Scheduler stopped")
 
     async def _run_loop(self) -> None:
         """Main scheduler loop."""
@@ -68,7 +74,7 @@ class BackgroundScheduler:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"[Scheduler] Error in tick: {e}")
+                logger.error(f"Error in tick: {e}")
                 await asyncio.sleep(10)  # back off on error
 
     async def _tick(self) -> None:
@@ -77,7 +83,7 @@ class BackgroundScheduler:
             # Ingest
             signals = await self.ingestion_manager.ingest_all(session, limit=15)
             if signals:
-                print(f"[Scheduler] Processing {len(signals)} new signals")
+                logger.info(f"Processing {len(signals)} new signals")
 
                 # Process through NLP + Risk
                 for sig in signals:
@@ -125,7 +131,7 @@ class BackgroundScheduler:
                         self.pipeline.add_to_index(sig.id, processed.embedding)
 
                     except Exception as e:
-                        print(f"[Scheduler] Error processing signal {sig.id}: {e}")
+                        logger.error(f"Error processing signal {sig.id}: {e}")
 
                 await session.commit()
 
@@ -147,9 +153,12 @@ class BackgroundScheduler:
                     if sig.risk_tier in ("high", "critical"):
                         await ws_manager.broadcast_alert(signal_data)
 
-                print(f"[Scheduler] Tick complete: {len(signals)} signals processed")
+                logger.info(f"Tick complete: {len(signals)} signals processed")
+
+                # Persist FAISS index to disk
+                self.pipeline.save_index()
             else:
-                print("[Scheduler] Tick: no new signals")
+                logger.debug("Tick: no new signals")
 
             # Run anomaly detection
             created_incidents = []
@@ -162,7 +171,7 @@ class BackgroundScheduler:
                 anomaly_detection_ok = True
                 active_anomaly_titles = auto_incident_manager.anomaly_titles(anomalies)
                 if anomalies:
-                    print(f"[Scheduler] Detected {len(anomalies)} anomalies")
+                    logger.info(f"Detected {len(anomalies)} anomalies")
                     auto_anomaly_incidents = await auto_incident_manager.create_from_anomalies(
                         session=session,
                         anomalies=anomalies,
@@ -178,7 +187,7 @@ class BackgroundScheduler:
                             "detected_at": anomaly.detected_at.isoformat(),
                         })
             except Exception as e:
-                print(f"[Scheduler] Anomaly detection error: {e}")
+                logger.error(f"Anomaly detection error: {e}")
 
             # Generate incidents from concerning metric forecasts on a slower cadence.
             try:
@@ -195,11 +204,11 @@ class BackgroundScheduler:
                         concerns=forecast_concerns,
                     )
                     if forecast_incidents:
-                        print(f"[Scheduler] Generated {len(forecast_incidents)} forecast incidents")
+                        logger.info(f"Generated {len(forecast_incidents)} forecast incidents")
                         created_incidents.extend(forecast_incidents)
                     self._last_forecast_incident_check = datetime.utcnow()
             except Exception as e:
-                print(f"[Scheduler] Forecast incident generation error: {e}")
+                logger.error(f"Forecast incident generation error: {e}")
 
             try:
                 resolved_incidents = await auto_incident_manager.reconcile_open_incidents(
@@ -208,9 +217,9 @@ class BackgroundScheduler:
                     active_forecast_titles=active_forecast_titles,
                 )
                 if resolved_incidents:
-                    print(f"[Scheduler] Auto-resolved {len(resolved_incidents)} incidents")
+                    logger.info(f"Auto-resolved {len(resolved_incidents)} incidents")
             except Exception as e:
-                print(f"[Scheduler] Incident reconciliation error: {e}")
+                logger.error(f"Incident reconciliation error: {e}")
 
             if created_incidents or resolved_incidents:
                 await session.commit()
@@ -244,8 +253,17 @@ class BackgroundScheduler:
     def _should_run_forecast_incident_check(self) -> bool:
         if self._last_forecast_incident_check is None:
             return True
-        # Forecast checks are heavier; run at most every 15 minutes.
         return datetime.utcnow() - self._last_forecast_incident_check >= timedelta(minutes=15)
+
+    async def _cleanup_old_signals(self, session) -> None:
+        """Delete signals older than retention_days to prevent unbounded DB growth."""
+        cutoff = datetime.utcnow() - timedelta(days=settings.retention_days)
+        result = await session.execute(
+            delete(Signal).where(Signal.timestamp < cutoff)
+        )
+        if result.rowcount > 0:
+            await session.commit()
+            logger.info(f"Data retention: deleted {result.rowcount} signals older than {settings.retention_days} days")
 
 
 # Global scheduler instance

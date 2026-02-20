@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timedelta
 from typing import Optional
@@ -18,6 +19,7 @@ from backend.models.signal import Signal
 from backend.nlp.pipeline import NLPPipeline
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+logger = logging.getLogger("signalforge.chat")
 
 _pipeline = NLPPipeline(use_mock=settings.use_mock_ml)
 
@@ -43,6 +45,7 @@ class ChatResponse(BaseModel):
     intent: str
     cited_signals: list[CitedSignal]
     signal_count: int
+    llm_powered: bool = False
 
 
 # ── Intent classification ───────────────────────────────────────
@@ -198,7 +201,69 @@ async def get_signal_stats(session: AsyncSession, filters: dict) -> dict:
     return {"total": row.total or 0, "avg_risk": round(float(row.avg_risk or 0), 3)}
 
 
-# ── Response generation ─────────────────────────────────────────
+# ── LLM-powered answer generation ──────────────────────────────
+
+
+async def generate_llm_answer(query: str, signals: list[Signal], stats: dict) -> Optional[str]:
+    """Try to generate an answer using an LLM. Returns None if LLM is not available."""
+    if not settings.openai_api_key:
+        return None
+
+    try:
+        import openai
+        client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+        # Build context from signals
+        signal_context = []
+        for s in signals[:10]:
+            entry = {
+                "id": s.id,
+                "source": s.source,
+                "title": s.title or "Untitled",
+                "content": (s.content or "")[:300],
+                "risk_tier": s.risk_tier,
+                "risk_score": s.risk_score,
+                "sentiment": s.sentiment_label,
+                "timestamp": s.timestamp.isoformat() if s.timestamp else "",
+            }
+            signal_context.append(json.dumps(entry))
+
+        system_prompt = (
+            "You are SignalForge AI, an operations intelligence copilot. "
+            "You analyze signals from multiple sources (Reddit, news, Zendesk, "
+            "Stripe, PagerDuty, system metrics) to help teams understand risk. "
+            "Answer the user's question based on the provided signal data. "
+            "Be concise, cite specific signals by ID (e.g., #42), and highlight risks. "
+            "Use markdown formatting. If the data doesn't answer the question, say so."
+        )
+
+        context_block = "\n".join(signal_context) if signal_context else "No signals found."
+        stats_summary = f"Total: {stats['total']} signals, avg risk: {stats['avg_risk']:.1%}"
+
+        response = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": (
+                    f"Question: {query}\n\n"
+                    f"Stats: {stats_summary}\n\n"
+                    f"Signal data:\n{context_block}"
+                )},
+            ],
+            max_tokens=600,
+            temperature=0.4,
+        )
+        return response.choices[0].message.content
+
+    except ImportError:
+        logger.info("openai package not installed — falling back to keyword mode")
+        return None
+    except Exception as e:
+        logger.warning(f"LLM call failed: {e} — falling back to keyword mode")
+        return None
+
+
+# ── Keyword-based response generation ───────────────────────────
 
 
 def generate_search_answer(query: str, signals: list[Signal], stats: dict) -> str:
@@ -327,8 +392,13 @@ async def chat(
     signals = await search_signals(session, filters, limit=15)
     stats = await get_signal_stats(session, filters)
 
-    # 4. Generate answer based on intent
-    if intent == "summarize":
+    # 4. Try LLM-powered answer first, fall back to keyword mode
+    llm_powered = False
+    llm_answer = await generate_llm_answer(query, signals, stats)
+    if llm_answer:
+        answer = llm_answer
+        llm_powered = True
+    elif intent == "summarize":
         answer = generate_summary_answer(signals, stats)
     elif intent == "count":
         answer = generate_count_answer(query, stats, filters)
@@ -353,4 +423,6 @@ async def chat(
         intent=intent,
         cited_signals=cited,
         signal_count=stats["total"],
+        llm_powered=llm_powered,
     )
+
