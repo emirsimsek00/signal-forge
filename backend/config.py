@@ -42,6 +42,22 @@ class Settings(BaseSettings):
     # ML
     use_mock_ml: bool = Field(default=True, alias="USE_MOCK_ML")
 
+    # JWT Authentication
+    jwt_secret: str = Field(default="change-me-in-production-signalforge-2024", alias="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_expire_minutes: int = Field(default=60, alias="JWT_EXPIRE_MINUTES")
+
+    # LLM (optional — falls back to keyword search when not set)
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
+    llm_provider: str = Field(default="openai", alias="LLM_PROVIDER")
+
+    # Data retention
+    retention_days: int = Field(default=90, alias="RETENTION_DAYS")
+
+    # FAISS index persistence
+    faiss_index_path: str = Field(default="./faiss_index", alias="FAISS_INDEX_PATH")
+
     # Ingestion
     reddit_subreddits: str = Field(default="technology,sysadmin,netsec", alias="REDDIT_SUBREDDITS")
     newsapi_categories: str = Field(default="technology,business", alias="NEWSAPI_CATEGORIES")
