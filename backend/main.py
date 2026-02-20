@@ -26,6 +26,9 @@ from backend.api.anomaly import router as anomaly_router
 from backend.api.brief import router as brief_router
 from backend.api.forecast import router as forecast_router
 from backend.api.webhooks import router as webhooks_router
+from backend.api.demo import router as demo_router
+from backend.api.simulator import router as simulator_router
+from backend.api.settings import router as settings_router
 from backend.workers.scheduler import scheduler
 
 logger = logging.getLogger("signalforge")
@@ -83,7 +86,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SignalForge",
     description="Multimodal AI Operations Copilot — Intelligence API",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -124,6 +127,9 @@ app.include_router(anomaly_router)
 app.include_router(brief_router)
 app.include_router(forecast_router)
 app.include_router(webhooks_router)
+app.include_router(demo_router)
+app.include_router(simulator_router)
+app.include_router(settings_router)
 
 
 @app.get("/api/health")
@@ -132,7 +138,8 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "signalforge",
-        "version": "0.4.0",
+        "version": "0.5.0",
         "websocket_connections": ws_manager.connection_count,
         "scheduler_active": scheduler._running,
     }
+

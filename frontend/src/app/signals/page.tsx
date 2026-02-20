@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, Signal, SignalListResponse } from "@/lib/api";
-import { Search, Filter, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Filter, RefreshCw, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import Link from "next/link";
 
 const SOURCES = ["all", "reddit", "news", "zendesk", "stripe", "pagerduty", "system", "financial"];
 const RISK_TIERS = ["all", "critical", "high", "moderate", "low"];
@@ -47,8 +48,8 @@ export default function SignalsPage() {
                                 key={s}
                                 onClick={() => { setSourceFilter(s); setPage(1); }}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${sourceFilter === s
-                                        ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
-                                        : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                    ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                                    : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
                                     }`}
                             >
                                 {s}
@@ -65,8 +66,8 @@ export default function SignalsPage() {
                                 key={t}
                                 onClick={() => { setRiskFilter(t); setPage(1); }}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${riskFilter === t
-                                        ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
-                                        : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                    ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                                    : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
                                     }`}
                             >
                                 {t}
@@ -100,7 +101,7 @@ export default function SignalsPage() {
                                 <tr
                                     key={signal.id}
                                     onClick={() => setSelected(signal)}
-                                    className="cursor-pointer"
+                                    className="cursor-pointer hover:bg-indigo-500/5 transition-colors"
                                 >
                                     <td>
                                         <span className={`source-badge source-${signal.source}`}>
@@ -214,12 +215,20 @@ export default function SignalsPage() {
                             )}
                         </div>
 
-                        <button
-                            onClick={() => setSelected(null)}
-                            className="mt-6 btn-primary w-full text-center"
-                        >
-                            Close
-                        </button>
+                        <div className="mt-6 flex gap-3">
+                            <Link
+                                href={`/signals/${selected.id}`}
+                                className="btn-primary flex-1 text-center inline-flex items-center justify-center gap-2"
+                            >
+                                <ExternalLink className="w-4 h-4" /> View Full Analysis
+                            </Link>
+                            <button
+                                onClick={() => setSelected(null)}
+                                className="flex-1 rounded-lg border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm text-slate-300 hover:border-indigo-400/50 transition"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

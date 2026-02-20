@@ -139,3 +139,115 @@ async def trigger_ingestion(
         "processed": processed_count,
         "message": f"Ingested {len(new_signals)} signals, processed {processed_count} through NLP + risk scoring.",
     }
+
+
+@router.get("/{signal_id}/explain")
+async def explain_signal_risk(
+    signal_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Return the full risk explanation for a signal.
+
+    Includes:
+    - Risk component breakdown (sentiment, anomaly, ticket, revenue, engagement)
+    - Weight configuration used
+    - Contributing signals (FAISS similarity)
+    - Timeline of related signals
+    """
+    from fastapi import HTTPException
+
+    # Get the signal
+    result = await session.execute(select(Signal).where(Signal.id == signal_id))
+    signal = result.scalar_one_or_none()
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    # Get risk assessment
+    risk_result = await session.execute(
+        select(RiskAssessment)
+        .where(RiskAssessment.signal_id == signal_id)
+        .order_by(desc(RiskAssessment.created_at))
+        .limit(1)
+    )
+    risk = risk_result.scalar_one_or_none()
+
+    # Find similar signals via FAISS
+    similar_signals = []
+    if signal.embedding_json:
+        try:
+            embedding = json.loads(signal.embedding_json)
+            similar_ids = nlp_pipeline.find_similar(embedding, k=6)
+            # Get signal details for similar ones (exclude self)
+            for sim_id, sim_score in similar_ids:
+                if sim_id == signal_id:
+                    continue
+                sim_result = await session.execute(select(Signal).where(Signal.id == sim_id))
+                sim_signal = sim_result.scalar_one_or_none()
+                if sim_signal:
+                    similar_signals.append({
+                        "id": sim_signal.id,
+                        "title": sim_signal.title,
+                        "source": sim_signal.source,
+                        "risk_tier": sim_signal.risk_tier,
+                        "risk_score": sim_signal.risk_score,
+                        "similarity": round(sim_score, 3),
+                        "timestamp": sim_signal.timestamp.isoformat() if sim_signal.timestamp else None,
+                    })
+        except (json.JSONDecodeError, Exception):
+            pass
+
+    # Build component breakdown
+    components = {}
+    weights = {
+        "sentiment": settings.risk_weight_sentiment,
+        "anomaly": settings.risk_weight_anomaly,
+        "ticket_volume": settings.risk_weight_ticket_volume,
+        "revenue": settings.risk_weight_revenue,
+        "engagement": settings.risk_weight_engagement,
+    }
+    if risk:
+        components = {
+            "sentiment": {"score": risk.sentiment_component, "weight": weights["sentiment"],
+                          "weighted": round(risk.sentiment_component * weights["sentiment"], 3)},
+            "anomaly": {"score": risk.anomaly_component, "weight": weights["anomaly"],
+                        "weighted": round(risk.anomaly_component * weights["anomaly"], 3)},
+            "ticket_volume": {"score": risk.ticket_volume_component, "weight": weights["ticket_volume"],
+                              "weighted": round(risk.ticket_volume_component * weights["ticket_volume"], 3)},
+            "revenue": {"score": risk.revenue_component, "weight": weights["revenue"],
+                        "weighted": round(risk.revenue_component * weights["revenue"], 3)},
+            "engagement": {"score": risk.engagement_component, "weight": weights["engagement"],
+                           "weighted": round(risk.engagement_component * weights["engagement"], 3)},
+        }
+
+    # Parse entities
+    entities = []
+    if signal.entities_json:
+        try:
+            entities = json.loads(signal.entities_json)
+        except json.JSONDecodeError:
+            pass
+
+    return {
+        "signal": {
+            "id": signal.id,
+            "source": signal.source,
+            "title": signal.title,
+            "content": signal.content,
+            "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
+            "sentiment_score": signal.sentiment_score,
+            "sentiment_label": signal.sentiment_label,
+            "summary": signal.summary,
+            "risk_score": signal.risk_score,
+            "risk_tier": signal.risk_tier,
+        },
+        "risk_explanation": {
+            "composite_score": risk.composite_score if risk else signal.risk_score,
+            "tier": risk.tier if risk else signal.risk_tier,
+            "explanation": risk.explanation if risk else "No risk assessment available.",
+            "components": components,
+            "weights": weights,
+        },
+        "entities": entities,
+        "similar_signals": similar_signals,
+    }
+

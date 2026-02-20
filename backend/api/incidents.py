@@ -183,3 +183,127 @@ async def reopen_incident(
 ):
     """Re-open a previously resolved or dismissed incident."""
     return await _transition_incident(incident_id, "reopen", session)
+
+
+# ── Notes (collaboration) ───────────────────────────────────────
+
+from backend.models.note import Note, NoteCreate, NoteResponse
+
+
+@router.get("/{incident_id}/notes", response_model=list[NoteResponse])
+async def list_notes(
+    incident_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """List all notes for an incident."""
+    result = await session.execute(
+        select(Note).where(Note.incident_id == incident_id).order_by(Note.created_at)
+    )
+    notes = result.scalars().all()
+    return [NoteResponse.model_validate(n) for n in notes]
+
+
+@router.post("/{incident_id}/notes", response_model=NoteResponse, status_code=201)
+async def add_note(
+    incident_id: int,
+    data: NoteCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Add a note to an incident."""
+    # Verify incident exists
+    inc_result = await session.execute(select(Incident).where(Incident.id == incident_id))
+    if not inc_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    note = Note(
+        incident_id=incident_id,
+        content=data.content,
+        author=data.author,
+    )
+    session.add(note)
+    await session.commit()
+    await session.refresh(note)
+    return NoteResponse.model_validate(note)
+
+
+# ── Timeline ────────────────────────────────────────────────────
+
+
+@router.get("/{incident_id}/timeline")
+async def get_incident_timeline(
+    incident_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Get the full timeline for an incident workspace.
+
+    Returns related signals, notes, and status events in chronological order.
+    """
+    from backend.models.signal import Signal
+
+    # Get incident
+    inc_result = await session.execute(select(Incident).where(Incident.id == incident_id))
+    incident = inc_result.scalar_one_or_none()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    timeline: list[dict] = []
+
+    # Add incident creation
+    timeline.append({
+        "type": "incident_created",
+        "timestamp": incident.start_time.isoformat() if incident.start_time else incident.created_at.isoformat(),
+        "content": f"Incident created: {incident.title}",
+        "severity": incident.severity,
+    })
+
+    # Add related signals
+    if incident.related_signal_ids_json:
+        try:
+            signal_ids = json.loads(incident.related_signal_ids_json)
+            if signal_ids:
+                sig_result = await session.execute(
+                    select(Signal).where(Signal.id.in_(signal_ids))
+                )
+                for sig in sig_result.scalars().all():
+                    timeline.append({
+                        "type": "signal",
+                        "timestamp": sig.timestamp.isoformat() if sig.timestamp else sig.created_at.isoformat(),
+                        "content": sig.title or sig.content[:100],
+                        "source": sig.source,
+                        "signal_id": sig.id,
+                        "risk_tier": sig.risk_tier,
+                        "sentiment_label": sig.sentiment_label,
+                    })
+        except (json.JSONDecodeError, Exception):
+            pass
+
+    # Add notes
+    notes_result = await session.execute(
+        select(Note).where(Note.incident_id == incident_id)
+    )
+    for note in notes_result.scalars().all():
+        timeline.append({
+            "type": "note",
+            "timestamp": note.created_at.isoformat(),
+            "content": note.content,
+            "author": note.author,
+        })
+
+    # Add resolution if resolved
+    if incident.end_time:
+        timeline.append({
+            "type": "incident_resolved",
+            "timestamp": incident.end_time.isoformat(),
+            "content": f"Incident {incident.status}",
+            "status": incident.status,
+        })
+
+    # Sort chronologically
+    timeline.sort(key=lambda x: x["timestamp"])
+
+    return {
+        "incident": IncidentResponse.model_validate(incident),
+        "timeline": timeline,
+        "event_count": len(timeline),
+    }
+

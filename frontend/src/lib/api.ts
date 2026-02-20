@@ -144,6 +144,7 @@ export interface ChatResponse {
   intent: string;
   cited_signals: ChatCitedSignal[];
   signal_count: number;
+  llm_powered?: boolean;
 }
 
 export interface ExecutiveBrief {
@@ -187,6 +188,97 @@ export interface ForecastResponse {
   predicted_values: ForecastPoint[];
 }
 
+// ── v2 Types ────────────────────────────────────────────
+
+export interface RiskComponent {
+  score: number;
+  weight: number;
+  weighted: number;
+}
+
+export interface SignalExplanation {
+  signal: Signal;
+  risk_explanation: {
+    composite_score: number | null;
+    tier: string | null;
+    explanation: string;
+    components: Record<string, RiskComponent>;
+    weights: Record<string, number>;
+  };
+  entities: { text: string; label: string }[];
+  similar_signals: {
+    id: number;
+    title: string | null;
+    source: string;
+    risk_tier: string | null;
+    risk_score: number | null;
+    similarity: number;
+    timestamp: string | null;
+  }[];
+}
+
+export interface Note {
+  id: number;
+  incident_id: number;
+  content: string;
+  author: string;
+  created_at: string;
+}
+
+export interface TimelineEvent {
+  type: string;
+  timestamp: string;
+  content: string;
+  source?: string;
+  signal_id?: number;
+  risk_tier?: string;
+  sentiment_label?: string;
+  severity?: string;
+  status?: string;
+  author?: string;
+}
+
+export interface IncidentTimeline {
+  incident: Incident;
+  timeline: TimelineEvent[];
+  event_count: number;
+}
+
+export interface ScenarioRequest {
+  sentiment_shift?: number;
+  volume_multiplier?: number;
+  risk_weight_sentiment?: number;
+  risk_weight_anomaly?: number;
+  risk_weight_ticket_volume?: number;
+  risk_weight_revenue?: number;
+  risk_weight_engagement?: number;
+}
+
+export interface ScenarioResult {
+  baseline_avg_risk: number;
+  projected_avg_risk: number;
+  delta: number;
+  baseline_tier_distribution: Record<string, number>;
+  projected_tier_distribution: Record<string, number>;
+  signals_analyzed: number;
+  high_risk_change: number;
+}
+
+export interface RiskWeights {
+  sentiment: number;
+  anomaly: number;
+  ticket_volume: number;
+  revenue: number;
+  engagement: number;
+}
+
+export interface AppSettings {
+  risk_weights: RiskWeights;
+  retention_days: number;
+  use_mock_ml: boolean;
+  llm_enabled: boolean;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -203,7 +295,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   // Health
-  health: () => apiFetch<{ status: string }>("/api/health"),
+  health: () => apiFetch<{ status: string; version: string; websocket_connections: number; scheduler_active: boolean }>("/api/health"),
 
   // Dashboard
   dashboardOverview: () => apiFetch<DashboardOverview>("/api/dashboard/overview"),
@@ -218,6 +310,7 @@ export const api = {
     return apiFetch<SignalListResponse>(`/api/signals?${params}`);
   },
   getSignal: (id: number) => apiFetch<Signal>(`/api/signals/${id}`),
+  explainSignal: (id: number) => apiFetch<SignalExplanation>(`/api/signals/${id}/explain`),
   triggerIngestion: (count = 30) =>
     apiFetch<{ status: string; ingested: number; processed: number }>(
       `/api/signals/ingest?count=${count}`,
@@ -233,6 +326,13 @@ export const api = {
     return apiFetch<Incident[]>(`/api/incidents?${params}`);
   },
   getIncident: (id: number) => apiFetch<Incident>(`/api/incidents/${id}`),
+  getIncidentTimeline: (id: number) => apiFetch<IncidentTimeline>(`/api/incidents/${id}/timeline`),
+  getIncidentNotes: (id: number) => apiFetch<Note[]>(`/api/incidents/${id}/notes`),
+  addIncidentNote: (id: number, content: string, author = "User") =>
+    apiFetch<Note>(`/api/incidents/${id}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ content, author }),
+    }),
   acknowledgeIncident: (id: number) =>
     apiFetch<Incident>(`/api/incidents/${id}/acknowledge`, { method: "POST" }),
   resolveIncident: (id: number) =>
@@ -281,4 +381,32 @@ export const api = {
     apiFetch<{ metrics: string[]; count: number }>(
       `/api/forecast/metrics?lookback_hours=${lookbackHours}`
     ),
+
+  // Demo
+  seedDemoData: () =>
+    apiFetch<{ status: string; signals_created?: number; incidents_created?: number; message: string }>(
+      "/api/demo/seed",
+      { method: "POST" }
+    ),
+  resetDemoData: () =>
+    apiFetch<{ status: string; deleted: number }>("/api/demo/reset", { method: "POST" }),
+
+  // Simulator
+  runScenario: (params: ScenarioRequest) =>
+    apiFetch<ScenarioResult>("/api/simulator/run", {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
+
+  // Settings
+  getSettings: () => apiFetch<AppSettings>("/api/settings"),
+  getRiskWeights: () => apiFetch<RiskWeights>("/api/settings/risk-weights"),
+  updateRiskWeights: (weights: RiskWeights) =>
+    apiFetch<RiskWeights>("/api/settings/risk-weights", {
+      method: "PUT",
+      body: JSON.stringify(weights),
+    }),
+  resetRiskWeights: () =>
+    apiFetch<RiskWeights>("/api/settings/risk-weights", { method: "DELETE" }),
 };
+

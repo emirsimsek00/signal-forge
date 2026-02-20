@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, Incident } from "@/lib/api";
+import Link from "next/link";
 import {
     AlertTriangle,
     CheckCircle2,
@@ -230,7 +231,9 @@ export default function IncidentsPage() {
                                     <div className="flex items-start gap-3">
                                         <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                                         <div>
-                                            <p className="text-sm font-semibold text-slate-100">{incident.title}</p>
+                                            <p className="text-sm font-semibold text-slate-100 hover:text-indigo-300 transition-colors">
+                                                <Link href={`/incidents/${incident.id}`}>{incident.title}</Link>
+                                            </p>
                                             <p className="text-sm text-slate-400 mt-1">{incident.description}</p>
                                         </div>
                                     </div>

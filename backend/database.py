@@ -33,6 +33,7 @@ async def init_db() -> None:
     # Ensure model modules are imported so SQLAlchemy metadata is populated.
     from backend.models import signal, incident, risk  # noqa: F401
     from backend.models import user  # noqa: F401
+    from backend.models import note  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
