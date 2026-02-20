@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
+import AlertToast from "@/components/AlertToast";
 
 export const metadata: Metadata = {
   title: "SignalForge — AI Operations Copilot",
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <Sidebar />
         <main className="ml-64 min-h-screen p-8">{children}</main>
+        <AlertToast />
       </body>
     </html>
   );

@@ -10,13 +10,17 @@ import {
     Bell,
     FileText,
     GitBranch,
+    MessageSquare,
+    Activity,
     Zap,
 } from "lucide-react";
 
 const NAV_ITEMS = [
     { href: "/", label: "Overview", icon: LayoutDashboard },
     { href: "/signals", label: "Signals", icon: Radio },
+    { href: "/chat", label: "AI Chat", icon: MessageSquare },
     { href: "/correlation", label: "Correlations", icon: GitBranch },
+    { href: "/anomalies", label: "Anomalies", icon: Activity },
     { href: "/incidents", label: "Incidents", icon: AlertTriangle },
     { href: "/risk", label: "Risk Map", icon: Shield },
     { href: "/alerts", label: "Alerts", icon: Bell },
