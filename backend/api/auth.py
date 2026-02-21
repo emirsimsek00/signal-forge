@@ -1,62 +1,56 @@
-"""Authentication API — register, login, and token management."""
+"""Authentication API — Supabase Auth integration with multi-tenancy.
+
+When SUPABASE_URL is configured, JWT tokens from Supabase are validated
+and mapped to local User/Tenant rows. When not configured, a lightweight
+demo mode allows unauthenticated access with a default tenant.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import re
+import uuid
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_session
-from backend.models.user import User, UserRegister, UserLogin, UserResponse, TokenResponse
+from backend.models.user import User, UserResponse, TokenResponse
+from backend.models.tenant import Tenant, TenantResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+logger = logging.getLogger("signalforge.auth")
 
-# ── Password hashing ──────────────────────────────────────────
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
+# ── Supabase detection ────────────────────────────────────────
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+_supabase_enabled = bool(settings.supabase_url and settings.supabase_anon_key)
 
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
-
-
-# ── JWT tokens ────────────────────────────────────────────────
-
-def create_token(data: dict, expires_delta: timedelta) -> str:
-    payload = data.copy()
-    payload["exp"] = datetime.utcnow() + expires_delta
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+DEFAULT_TENANT_ID = "default"
+DEFAULT_TENANT_NAME = "Default Workspace"
 
 
-def create_tokens(user_id: int, email: str) -> TokenResponse:
-    access_delta = timedelta(minutes=settings.jwt_expire_minutes)
-    refresh_delta = timedelta(days=7)
+# ── JWT verification ──────────────────────────────────────────
 
-    access_token = create_token(
-        {"sub": str(user_id), "email": email, "type": "access"},
-        access_delta,
-    )
-    refresh_token = create_token(
-        {"sub": str(user_id), "email": email, "type": "refresh"},
-        refresh_delta,
-    )
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=int(access_delta.total_seconds()),
-    )
+def _verify_supabase_jwt(token: str) -> dict:
+    """Verify a Supabase-issued JWT and return its payload."""
+    secret = settings.supabase_jwt_secret or settings.jwt_secret
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        return payload
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {exc}")
 
 
 # ── Dependency: get current user ──────────────────────────────
@@ -65,30 +59,64 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     session: AsyncSession = Depends(get_session),
 ) -> Optional[User]:
-    """Extract and validate the current user from JWT token.
+    """Extract and validate user from JWT (Supabase or legacy).
 
     Returns None if no token is provided (allows optional auth).
-    Raises 401 if token is invalid.
+    In demo mode (no Supabase configured), returns None (all data uses default tenant).
     """
     if credentials is None:
         return None
 
     token = credentials.credentials
-    try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        user_id = int(payload.get("sub", 0))
-        token_type = payload.get("type", "")
-        if not user_id or token_type != "access":
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except (JWTError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+    if _supabase_enabled:
+        payload = _verify_supabase_jwt(token)
+        supabase_id = payload.get("sub", "")
+        email = payload.get("email", "")
+        if not supabase_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    return user
+        # Look up or auto-create local user row
+        result = await session.execute(
+            select(User).where(User.supabase_id == supabase_id)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            # First login — auto-provision with default tenant
+            user = User(
+                supabase_id=supabase_id,
+                tenant_id=DEFAULT_TENANT_ID,
+                email=email,
+                display_name=email.split("@")[0],
+                role="owner",
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            logger.info(f"Auto-provisioned user {email} (supabase_id={supabase_id})")
+
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Account is disabled")
+
+        return user
+    else:
+        # Legacy JWT mode (dev/demo)
+        try:
+            payload = jwt.decode(
+                token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+            )
+            user_id = int(payload.get("sub", 0))
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Invalid token")
+        except (JWTError, ValueError):
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401, detail="User not found or inactive")
+        return user
 
 
 async def require_auth(
@@ -100,72 +128,145 @@ async def require_auth(
     return user
 
 
-async def require_admin(user: User = Depends(require_auth)) -> User:
-    """Requires admin role."""
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
+def require_role(*roles: str):
+    """Factory for role-checking dependencies."""
+    async def _check(user: User = Depends(require_auth)) -> User:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Requires one of: {', '.join(roles)}"
+            )
+        return user
+    return _check
+
+
+require_admin = require_role("admin", "owner")
+
+
+# ── Tenant resolution ────────────────────────────────────────
+
+def get_tenant_id(user: Optional[User] = Depends(get_current_user)) -> str:
+    """Resolve tenant_id — from authenticated user or default."""
+    if user is not None:
+        return user.tenant_id
+    return DEFAULT_TENANT_ID
 
 
 # ── Endpoints ─────────────────────────────────────────────────
 
-@router.post("/register", response_model=UserResponse, status_code=201)
-async def register(body: UserRegister, session: AsyncSession = Depends(get_session)):
-    # Check for existing user
-    existing = await session.execute(select(User).where(User.email == body.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
+@router.post("/callback")
+async def auth_callback(
+    body: dict = Body(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Called after Supabase signup to create tenant + local user.
 
+    Body: { supabase_id, email, display_name?, tenant_name? }
+    """
+    supabase_id = body.get("supabase_id", "")
+    email = body.get("email", "")
+    display_name = body.get("display_name", email.split("@")[0] if email else "User")
+    tenant_name = body.get("tenant_name", f"{display_name}'s Workspace")
+
+    if not supabase_id or not email:
+        raise HTTPException(status_code=400, detail="supabase_id and email required")
+
+    # Check if user already exists
+    existing = await session.execute(
+        select(User).where(User.supabase_id == supabase_id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="User already provisioned")
+
+    # Create tenant
+    slug = re.sub(r"[^a-z0-9]+", "-", tenant_name.lower()).strip("-")
+    # Check slug uniqueness, append random suffix if needed
+    slug_check = await session.execute(select(Tenant).where(Tenant.slug == slug))
+    if slug_check.scalar_one_or_none():
+        slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+
+    tenant = Tenant(name=tenant_name, slug=slug)
+    session.add(tenant)
+    await session.flush()  # get tenant.id
+
+    # Create user
     user = User(
-        email=body.email,
-        hashed_password=hash_password(body.password),
-        display_name=body.display_name,
-        role="viewer",
+        supabase_id=supabase_id,
+        tenant_id=tenant.id,
+        email=email,
+        display_name=display_name,
+        role="owner",
     )
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    return user
+    await session.refresh(tenant)
+
+    logger.info(f"Created tenant '{tenant.name}' and user {email}")
+
+    return {
+        "user": UserResponse.model_validate(user).model_dump(),
+        "tenant": TenantResponse.model_validate(tenant).model_dump(),
+    }
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(body: UserLogin, session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
-
-    if not user or not verify_password(body.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account is disabled")
-
-    return create_tokens(user.id, user.email)
-
-
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+@router.post("/join")
+async def join_tenant(
+    body: dict = Body(...),
     session: AsyncSession = Depends(get_session),
 ):
-    try:
-        payload = jwt.decode(
-            credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
-        )
-        if payload.get("type") != "refresh":
-            raise HTTPException(status_code=401, detail="Not a refresh token")
-        user_id = int(payload.get("sub", 0))
-        email = payload.get("email", "")
-    except (JWTError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    """Join an existing tenant by invite code (tenant slug).
 
-    result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+    Body: { supabase_id, email, tenant_slug, display_name? }
+    """
+    supabase_id = body.get("supabase_id", "")
+    email = body.get("email", "")
+    tenant_slug = body.get("tenant_slug", "")
+    display_name = body.get("display_name", email.split("@")[0] if email else "User")
 
-    return create_tokens(user.id, user.email)
+    if not supabase_id or not email or not tenant_slug:
+        raise HTTPException(status_code=400, detail="supabase_id, email, and tenant_slug required")
+
+    # Find tenant
+    result = await session.execute(select(Tenant).where(Tenant.slug == tenant_slug))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # Check if user already exists
+    existing = await session.execute(
+        select(User).where(User.supabase_id == supabase_id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="User already provisioned")
+
+    user = User(
+        supabase_id=supabase_id,
+        tenant_id=tenant.id,
+        email=email,
+        display_name=display_name,
+        role="analyst",
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    return {
+        "user": UserResponse.model_validate(user).model_dump(),
+        "tenant": TenantResponse.model_validate(tenant).model_dump(),
+    }
 
 
-@router.get("/me", response_model=UserResponse)
-async def get_me(user: User = Depends(require_auth)):
-    return user
+@router.get("/me")
+async def get_me(
+    user: User = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return current user info with tenant."""
+    result = await session.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+    tenant = result.scalar_one_or_none()
+
+    return {
+        "user": UserResponse.model_validate(user).model_dump(),
+        "tenant": TenantResponse.model_validate(tenant).model_dump() if tenant else None,
+    }

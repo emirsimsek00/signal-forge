@@ -279,13 +279,31 @@ export interface AppSettings {
   llm_enabled: boolean;
 }
 
+async function getAuthToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const { supabase } = await import('@/lib/supabase');
+    if (!supabase) return null;
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);

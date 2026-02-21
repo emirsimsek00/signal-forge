@@ -3,6 +3,7 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import AlertToast from "@/components/AlertToast";
 import PageTransition from "@/components/PageTransition";
+import { AuthProvider } from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
   title: "SignalForge — AI Operations Platform",
@@ -24,13 +25,14 @@ export default function RootLayout({
         />
       </head>
       <body suppressHydrationWarning>
-        <Sidebar />
-        <main className="ml-64 min-h-screen p-8">
-          <PageTransition>{children}</PageTransition>
-        </main>
-        <AlertToast />
+        <AuthProvider>
+          <Sidebar />
+          <main className="ml-64 min-h-screen p-8">
+            <PageTransition>{children}</PageTransition>
+          </main>
+          <AlertToast />
+        </AuthProvider>
       </body>
     </html>
   );
 }
-

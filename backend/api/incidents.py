@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.websocket import manager as ws_manager
 from backend.database import get_session
 from backend.models.incident import Incident, IncidentCreate, IncidentResponse
+from backend.api.auth import get_tenant_id
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
@@ -21,10 +22,11 @@ async def list_incidents(
     status: str | None = Query(None),
     severity: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """List incidents with optional filtering."""
-    query = select(Incident).order_by(desc(Incident.created_at))
+    query = select(Incident).where(Incident.tenant_id == tenant_id).order_by(desc(Incident.created_at))
 
     if status:
         query = query.where(Incident.status == status)
@@ -40,9 +42,10 @@ async def list_incidents(
 @router.get("/{incident_id}", response_model=IncidentResponse)
 async def get_incident(
     incident_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(select(Incident).where(Incident.id == incident_id))
+    result = await session.execute(select(Incident).where(Incident.id == incident_id, Incident.tenant_id == tenant_id))
     incident = result.scalar_one_or_none()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -52,6 +55,7 @@ async def get_incident(
 @router.post("", response_model=IncidentResponse, status_code=201)
 async def create_incident(
     data: IncidentCreate,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     incident = Incident(
@@ -63,10 +67,24 @@ async def create_incident(
         end_time=data.end_time,
         related_signal_ids_json=json.dumps(data.related_signal_ids),
         root_cause_hypothesis=data.root_cause_hypothesis,
+        tenant_id=tenant_id,
     )
     session.add(incident)
     await session.commit()
     await session.refresh(incident)
+
+    # Notify on incident creation
+    try:
+        from backend.services.notifier import notify_tenant
+        await notify_tenant(tenant_id, "incident_created", {
+            "title": incident.title,
+            "description": incident.description,
+            "severity": incident.severity,
+            "status": incident.status,
+        }, session=session)
+    except Exception:
+        pass  # Don't fail incident creation if notification fails
+
     return IncidentResponse.model_validate(incident)
 
 

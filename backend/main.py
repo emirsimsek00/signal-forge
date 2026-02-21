@@ -29,6 +29,7 @@ from backend.api.webhooks import router as webhooks_router
 from backend.api.demo import router as demo_router
 from backend.api.simulator import router as simulator_router
 from backend.api.settings import router as settings_router
+from backend.api.notifications import router as notifications_router
 from backend.workers.scheduler import scheduler
 
 logger = logging.getLogger("signalforge")
@@ -59,6 +60,23 @@ def _startup_checks() -> None:
         logger.info(f"✓ Live sources: {', '.join(active)}")
     else:
         logger.info("○ No API keys set — using demo data for all sources")
+
+    # Supabase auth status
+    if settings.supabase_url:
+        logger.info("✓ Supabase Auth enabled")
+    else:
+        logger.info("○ Supabase not configured — running in demo auth mode")
+
+    # Notification status
+    notif = []
+    if settings.resend_api_key:
+        notif.append("Resend")
+    if settings.slack_webhook_url:
+        notif.append("Slack")
+    if notif:
+        logger.info(f"✓ Notifications: {', '.join(notif)}")
+    else:
+        logger.info("○ No notification providers configured")
 
 
 @asynccontextmanager
@@ -130,6 +148,7 @@ app.include_router(webhooks_router)
 app.include_router(demo_router)
 app.include_router(simulator_router)
 app.include_router(settings_router)
+app.include_router(notifications_router)
 
 
 @app.get("/api/health")

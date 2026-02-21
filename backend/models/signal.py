@@ -38,6 +38,7 @@ class Signal(Base):
     __tablename__ = "signals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True, default="default")
     source: Mapped[str] = mapped_column(String(50), index=True)
     source_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     title: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

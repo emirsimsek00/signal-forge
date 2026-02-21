@@ -15,6 +15,7 @@ class RiskAssessment(Base):
     __tablename__ = "risk_assessments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True, default="default")
     signal_id: Mapped[int] = mapped_column(Integer, index=True)
     composite_score: Mapped[float] = mapped_column(Float)
     sentiment_component: Mapped[float] = mapped_column(Float, default=0.0)

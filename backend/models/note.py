@@ -15,6 +15,7 @@ class Note(Base):
     __tablename__ = "notes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True, default="default")
     incident_id: Mapped[int] = mapped_column(Integer, index=True)
     content: Mapped[str] = mapped_column(Text)
     author: Mapped[str] = mapped_column(String(100), default="System")

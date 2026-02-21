@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_session
 from backend.models.signal import Signal
 from backend.models.incident import Incident
+from backend.api.auth import get_tenant_id
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
 
 @router.get("/dashboard/overview")
 async def dashboard_overview(
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Aggregated dashboard overview — KPI cards data."""
@@ -24,13 +26,14 @@ async def dashboard_overview(
 
     # Total signals
     total_signals = (
-        await session.execute(select(func.count()).select_from(Signal))
+        await session.execute(select(func.count()).select_from(Signal).where(Signal.tenant_id == tenant_id))
     ).scalar() or 0
 
     # Active incidents
     active_incidents = (
         await session.execute(
             select(func.count()).select_from(Incident).where(
+                Incident.tenant_id == tenant_id,
                 Incident.status.in_(["active", "investigating"])
             )
         )
@@ -39,7 +42,7 @@ async def dashboard_overview(
     # Average risk score
     avg_risk = (
         await session.execute(
-            select(func.avg(Signal.risk_score)).where(Signal.risk_score.isnot(None))
+            select(func.avg(Signal.risk_score)).where(Signal.tenant_id == tenant_id, Signal.risk_score.isnot(None))
         )
     ).scalar() or 0.0
 
@@ -47,7 +50,7 @@ async def dashboard_overview(
     tier_counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
     tier_result = await session.execute(
         select(Signal.risk_tier, func.count().label("count"))
-        .where(Signal.risk_tier.isnot(None))
+        .where(Signal.tenant_id == tenant_id, Signal.risk_tier.isnot(None))
         .group_by(Signal.risk_tier)
     )
     for tier, count in tier_result.all():

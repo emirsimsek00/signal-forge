@@ -42,10 +42,23 @@ class Settings(BaseSettings):
     # ML
     use_mock_ml: bool = Field(default=True, alias="USE_MOCK_ML")
 
-    # JWT Authentication
+    # Supabase Auth
+    supabase_url: str = Field(default="", alias="SUPABASE_URL")
+    supabase_anon_key: str = Field(default="", alias="SUPABASE_ANON_KEY")
+    supabase_service_role_key: str = Field(default="", alias="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
+
+    # Legacy JWT (fallback when Supabase not configured)
     jwt_secret: str = Field(default="change-me-in-production-signalforge-2024", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     jwt_expire_minutes: int = Field(default=60, alias="JWT_EXPIRE_MINUTES")
+
+    # Notifications — Email (Resend)
+    resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
+    notification_from_email: str = Field(default="alerts@signalforge.io", alias="NOTIFICATION_FROM_EMAIL")
+
+    # Notifications — Slack
+    slack_webhook_url: str = Field(default="", alias="SLACK_WEBHOOK_URL")
 
     # LLM (optional — falls back to keyword search when not set)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")

@@ -16,6 +16,7 @@ from backend.models.risk import RiskAssessment
 from backend.ingestion.manager import IngestionManager
 from backend.nlp.pipeline import NLPPipeline
 from backend.risk.scorer import RiskScorer
+from backend.api.auth import get_tenant_id
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
@@ -30,10 +31,11 @@ async def list_signals(
     risk_tier: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """List signals with optional filtering."""
-    query = select(Signal).order_by(desc(Signal.timestamp))
+    query = select(Signal).where(Signal.tenant_id == tenant_id).order_by(desc(Signal.timestamp))
 
     if source:
         query = query.where(Signal.source == source)
@@ -60,10 +62,11 @@ async def list_signals(
 @router.get("/{signal_id}", response_model=SignalResponse)
 async def get_signal(
     signal_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Get a single signal by ID."""
-    result = await session.execute(select(Signal).where(Signal.id == signal_id))
+    result = await session.execute(select(Signal).where(Signal.id == signal_id, Signal.tenant_id == tenant_id))
     signal = result.scalar_one_or_none()
     if not signal:
         from fastapi import HTTPException
@@ -74,6 +77,7 @@ async def get_signal(
 @router.post("/ingest")
 async def trigger_ingestion(
     count: int = Query(30, ge=1, le=200),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Trigger signal ingestion, NLP processing, and risk scoring."""
@@ -112,10 +116,12 @@ async def trigger_ingestion(
             )
             sig.risk_score = risk.composite_score
             sig.risk_tier = risk.tier
+            sig.tenant_id = tenant_id
 
             session.add(
                 RiskAssessment(
                     signal_id=sig.id,
+                    tenant_id=tenant_id,
                     composite_score=risk.composite_score,
                     sentiment_component=risk.sentiment_component,
                     anomaly_component=risk.anomaly_component,
@@ -144,6 +150,7 @@ async def trigger_ingestion(
 @router.get("/{signal_id}/explain")
 async def explain_signal_risk(
     signal_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Return the full risk explanation for a signal.
@@ -157,7 +164,7 @@ async def explain_signal_risk(
     from fastapi import HTTPException
 
     # Get the signal
-    result = await session.execute(select(Signal).where(Signal.id == signal_id))
+    result = await session.execute(select(Signal).where(Signal.id == signal_id, Signal.tenant_id == tenant_id))
     signal = result.scalar_one_or_none()
     if not signal:
         raise HTTPException(status_code=404, detail="Signal not found")
