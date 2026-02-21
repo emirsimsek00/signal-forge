@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
 import {
     LayoutDashboard,
     Radio,
     AlertTriangle,
     Shield,
     Bell,
+    BellRing,
     FileText,
     GitBranch,
     MessageSquare,
@@ -17,6 +20,8 @@ import {
     Settings2,
     HeartPulse,
     Rocket,
+    LogOut,
+    UserRound,
 } from "lucide-react";
 
 const NAV_SECTIONS = [
@@ -41,6 +46,7 @@ const NAV_SECTIONS = [
         label: "Operations",
         items: [
             { href: "/alerts", label: "Alerts", icon: Bell },
+            { href: "/notifications", label: "Notifications", icon: BellRing },
             { href: "/brief", label: "Exec Brief", icon: FileText },
             { href: "/simulator", label: "Simulator", icon: FlaskConical },
         ],
@@ -57,6 +63,24 @@ const NAV_SECTIONS = [
 
 export default function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+    const { user, tenant, isDemo, signOut } = useAuth();
+    const [signingOut, setSigningOut] = useState(false);
+
+    const userName =
+        (user?.user_metadata?.display_name as string | undefined) ||
+        (user?.email ? user.email.split("@")[0] : "Guest");
+    const workspaceName = tenant?.name || (isDemo ? "Demo Workspace" : "No Workspace");
+
+    const handleSignOut = async () => {
+        setSigningOut(true);
+        try {
+            await signOut();
+            router.replace(isDemo ? "/" : "/login");
+        } finally {
+            setSigningOut(false);
+        }
+    };
 
     return (
         <aside className="sidebar fixed left-0 top-0 bottom-0 w-64 flex flex-col z-50">
@@ -99,6 +123,27 @@ export default function Sidebar() {
                     </div>
                 ))}
             </nav>
+
+            {/* Auth summary */}
+            <div className="mx-4 mb-3 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div className="flex items-start gap-2">
+                    <div className="mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(99, 102, 241, 0.14)" }}>
+                        <UserRound className="w-4 h-4 text-indigo-300" />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-xs text-white font-medium truncate">{userName}</p>
+                        <p className="text-[0.65rem] text-slate-500 truncate">{workspaceName}</p>
+                    </div>
+                </div>
+                <button
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    className="mt-3 w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 hover:border-indigo-400/50 transition disabled:opacity-60"
+                >
+                    <LogOut className="w-3.5 h-3.5" />
+                    {signingOut ? "Signing out..." : "Sign Out"}
+                </button>
+            </div>
 
             {/* Status footer */}
             <div className="p-4 mx-4 mb-4 rounded-xl" style={{ background: "rgba(99, 102, 241, 0.08)", border: "1px solid rgba(99, 102, 241, 0.12)" }}>

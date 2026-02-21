@@ -6,12 +6,12 @@ import logging
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config import settings
 from backend.database import get_session
 from backend.models.signal import Signal
+from backend.api.auth import get_tenant_id
 
 logger = logging.getLogger("signalforge.simulator")
 router = APIRouter(prefix="/api/simulator", tags=["simulator"])
@@ -41,6 +41,7 @@ class ScenarioResult(BaseModel):
 @router.post("/run", response_model=ScenarioResult)
 async def run_scenario(
     request: ScenarioRequest,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Simulate risk impact of 'what if' scenario changes.
@@ -52,7 +53,9 @@ async def run_scenario(
 
     # Get current signal data
     result = await session.execute(
-        select(Signal).where(Signal.risk_score.isnot(None)).limit(200)
+        select(Signal)
+        .where(Signal.tenant_id == tenant_id, Signal.risk_score.isnot(None))
+        .limit(200)
     )
     signals = list(result.scalars().all())
 

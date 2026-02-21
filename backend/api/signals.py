@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, desc
@@ -17,6 +16,7 @@ from backend.ingestion.manager import IngestionManager
 from backend.nlp.pipeline import NLPPipeline
 from backend.risk.scorer import RiskScorer
 from backend.api.auth import get_tenant_id
+from backend.services.notifier import notify_tenant
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
@@ -82,10 +82,11 @@ async def trigger_ingestion(
 ):
     """Trigger signal ingestion, NLP processing, and risk scoring."""
     # 1. Ingest
-    new_signals = await ingestion_mgr.ingest_all(session, limit=count)
+    new_signals = await ingestion_mgr.ingest_all(session, limit=count, tenant_id=tenant_id)
 
     # 2. Process through NLP pipeline & score risk
     processed_count = 0
+    critical_contexts: list[dict] = []
     for sig in new_signals:
         try:
             processed = nlp_pipeline.process(sig.content)
@@ -118,6 +119,20 @@ async def trigger_ingestion(
             sig.risk_tier = risk.tier
             sig.tenant_id = tenant_id
 
+            if sig.risk_tier == "critical":
+                critical_contexts.append(
+                    {
+                        "id": sig.id,
+                        "title": sig.title or f"{sig.source} signal",
+                        "source": sig.source,
+                        "content": sig.content,
+                        "summary": sig.summary,
+                        "risk_score": sig.risk_score,
+                        "risk_tier": sig.risk_tier,
+                        "timestamp": sig.timestamp.isoformat() if sig.timestamp else None,
+                    }
+                )
+
             session.add(
                 RiskAssessment(
                     signal_id=sig.id,
@@ -138,6 +153,13 @@ async def trigger_ingestion(
             print(f"[Signals API] Error processing signal {sig.id}: {e}")
 
     await session.commit()
+
+    # 3. Trigger tenant notifications for critical signals.
+    for context in critical_contexts:
+        try:
+            await notify_tenant(tenant_id, "critical_signal", context, session=session)
+        except Exception as e:
+            print(f"[Signals API] Error sending critical_signal notification for signal {context.get('id')}: {e}")
 
     return {
         "status": "success",
@@ -257,4 +279,3 @@ async def explain_signal_risk(
         "entities": entities,
         "similar_signals": similar_signals,
     }
-

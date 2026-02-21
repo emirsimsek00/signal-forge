@@ -53,3 +53,12 @@ class TestIngestionManager:
             assert sig.id is not None
             assert sig.source is not None
             assert sig.content
+            assert sig.tenant_id == "default"
+
+    @pytest.mark.asyncio
+    async def test_ingest_all_respects_tenant_id(self, db_session):
+        manager = IngestionManager()
+        signals = await manager.ingest_all(db_session, limit=4, tenant_id="tenant-test")
+        assert len(signals) > 0
+        for sig in signals:
+            assert sig.tenant_id == "tenant-test"

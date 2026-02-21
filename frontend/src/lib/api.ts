@@ -279,6 +279,40 @@ export interface AppSettings {
   llm_enabled: boolean;
 }
 
+export type NotificationChannel = "email" | "slack";
+export type NotificationTrigger =
+  | "critical_signal"
+  | "incident_created"
+  | "incident_escalated"
+  | "incident_resolved"
+  | "daily_digest";
+
+export interface NotificationPreference {
+  id: number;
+  tenant_id: string;
+  channel: NotificationChannel;
+  target: string;
+  triggers: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface NotificationPreferenceCreate {
+  channel: NotificationChannel;
+  target: string;
+  triggers: NotificationTrigger[];
+}
+
+export interface NotificationLog {
+  id: number;
+  channel: NotificationChannel;
+  trigger: string;
+  subject: string;
+  status: "sent" | "failed";
+  error: string | null;
+  created_at: string;
+}
+
 async function getAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
   try {
@@ -438,5 +472,24 @@ export const api = {
     }),
   resetRiskWeights: () =>
     apiFetch<RiskWeights>("/api/settings/risk-weights", { method: "DELETE" }),
-};
 
+  // Notifications
+  getPreferences: () =>
+    apiFetch<{ preferences: NotificationPreference[] }>("/api/notifications/preferences"),
+  createPreference: (payload: NotificationPreferenceCreate) =>
+    apiFetch<NotificationPreference>("/api/notifications/preferences", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deletePreference: (prefId: number) =>
+    apiFetch<{ status: string }>(`/api/notifications/preferences/${prefId}`, {
+      method: "DELETE",
+    }),
+  getLogs: (limit = 50) =>
+    apiFetch<{ logs: NotificationLog[] }>(`/api/notifications/log?limit=${limit}`),
+  testNotification: (channel: NotificationChannel, target: string) =>
+    apiFetch<{ status: string; result?: Record<string, unknown> }>("/api/notifications/test", {
+      method: "POST",
+      body: JSON.stringify({ channel, target }),
+    }),
+};

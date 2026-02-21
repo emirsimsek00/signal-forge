@@ -81,7 +81,12 @@ class IngestionManager:
 
         return sources
 
-    async def ingest_all(self, session: AsyncSession, limit: int = 50) -> list[Signal]:
+    async def ingest_all(
+        self,
+        session: AsyncSession,
+        limit: int = 50,
+        tenant_id: str = "default",
+    ) -> list[Signal]:
         """Fetch signals from all sources, normalize, and persist."""
         all_raw: list[RawSignal] = []
         per_source = max(1, limit // max(len(self.sources), 1))
@@ -97,6 +102,7 @@ class IngestionManager:
         db_signals = []
         for raw in all_raw:
             sig = Signal(
+                tenant_id=tenant_id,
                 source=raw.source,
                 source_id=raw.source_id,
                 title=raw.title,

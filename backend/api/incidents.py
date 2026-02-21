@@ -138,9 +138,15 @@ def _apply_transition(incident: Incident, action: str) -> None:
 async def _transition_incident(
     incident_id: int,
     action: str,
+    tenant_id: str,
     session: AsyncSession,
 ) -> IncidentResponse:
-    result = await session.execute(select(Incident).where(Incident.id == incident_id))
+    result = await session.execute(
+        select(Incident).where(
+            Incident.id == incident_id,
+            Incident.tenant_id == tenant_id,
+        )
+    )
     incident = result.scalar_one_or_none()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -170,37 +176,41 @@ async def _transition_incident(
 @router.post("/{incident_id}/acknowledge", response_model=IncidentResponse)
 async def acknowledge_incident(
     incident_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Move an incident from active to investigating."""
-    return await _transition_incident(incident_id, "acknowledge", session)
+    return await _transition_incident(incident_id, "acknowledge", tenant_id, session)
 
 
 @router.post("/{incident_id}/resolve", response_model=IncidentResponse)
 async def resolve_incident(
     incident_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Mark an incident as resolved."""
-    return await _transition_incident(incident_id, "resolve", session)
+    return await _transition_incident(incident_id, "resolve", tenant_id, session)
 
 
 @router.post("/{incident_id}/dismiss", response_model=IncidentResponse)
 async def dismiss_incident(
     incident_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Dismiss an incident as non-actionable."""
-    return await _transition_incident(incident_id, "dismiss", session)
+    return await _transition_incident(incident_id, "dismiss", tenant_id, session)
 
 
 @router.post("/{incident_id}/reopen", response_model=IncidentResponse)
 async def reopen_incident(
     incident_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Re-open a previously resolved or dismissed incident."""
-    return await _transition_incident(incident_id, "reopen", session)
+    return await _transition_incident(incident_id, "reopen", tenant_id, session)
 
 
 # ── Notes (collaboration) ───────────────────────────────────────
@@ -211,11 +221,23 @@ from backend.models.note import Note, NoteCreate, NoteResponse
 @router.get("/{incident_id}/notes", response_model=list[NoteResponse])
 async def list_notes(
     incident_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """List all notes for an incident."""
+    inc_result = await session.execute(
+        select(Incident).where(
+            Incident.id == incident_id,
+            Incident.tenant_id == tenant_id,
+        )
+    )
+    if not inc_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Incident not found")
+
     result = await session.execute(
-        select(Note).where(Note.incident_id == incident_id).order_by(Note.created_at)
+        select(Note)
+        .where(Note.incident_id == incident_id, Note.tenant_id == tenant_id)
+        .order_by(Note.created_at)
     )
     notes = result.scalars().all()
     return [NoteResponse.model_validate(n) for n in notes]
@@ -225,15 +247,22 @@ async def list_notes(
 async def add_note(
     incident_id: int,
     data: NoteCreate,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Add a note to an incident."""
     # Verify incident exists
-    inc_result = await session.execute(select(Incident).where(Incident.id == incident_id))
+    inc_result = await session.execute(
+        select(Incident).where(
+            Incident.id == incident_id,
+            Incident.tenant_id == tenant_id,
+        )
+    )
     if not inc_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Incident not found")
 
     note = Note(
+        tenant_id=tenant_id,
         incident_id=incident_id,
         content=data.content,
         author=data.author,
@@ -250,6 +279,7 @@ async def add_note(
 @router.get("/{incident_id}/timeline")
 async def get_incident_timeline(
     incident_id: int,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Get the full timeline for an incident workspace.
@@ -259,7 +289,12 @@ async def get_incident_timeline(
     from backend.models.signal import Signal
 
     # Get incident
-    inc_result = await session.execute(select(Incident).where(Incident.id == incident_id))
+    inc_result = await session.execute(
+        select(Incident).where(
+            Incident.id == incident_id,
+            Incident.tenant_id == tenant_id,
+        )
+    )
     incident = inc_result.scalar_one_or_none()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -280,7 +315,10 @@ async def get_incident_timeline(
             signal_ids = json.loads(incident.related_signal_ids_json)
             if signal_ids:
                 sig_result = await session.execute(
-                    select(Signal).where(Signal.id.in_(signal_ids))
+                    select(Signal).where(
+                        Signal.id.in_(signal_ids),
+                        Signal.tenant_id == tenant_id,
+                    )
                 )
                 for sig in sig_result.scalars().all():
                     timeline.append({
@@ -297,7 +335,7 @@ async def get_incident_timeline(
 
     # Add notes
     notes_result = await session.execute(
-        select(Note).where(Note.incident_id == incident_id)
+        select(Note).where(Note.incident_id == incident_id, Note.tenant_id == tenant_id)
     )
     for note in notes_result.scalars().all():
         timeline.append({
@@ -324,4 +362,3 @@ async def get_incident_timeline(
         "timeline": timeline,
         "event_count": len(timeline),
     }
-

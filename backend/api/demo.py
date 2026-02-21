@@ -8,7 +8,7 @@ import random
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
@@ -18,6 +18,7 @@ from backend.models.risk import RiskAssessment
 from backend.nlp.pipeline import NLPPipeline
 from backend.risk.scorer import RiskScorer
 from backend.config import settings
+from backend.api.auth import get_tenant_id
 
 logger = logging.getLogger("signalforge.demo")
 router = APIRouter(prefix="/api/demo", tags=["demo"])
@@ -123,14 +124,21 @@ _DEMO_INCIDENTS = [
 
 
 @router.post("/seed")
-async def seed_demo_data(session: AsyncSession = Depends(get_session)):
+async def seed_demo_data(
+    tenant_id: str = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
     """Seed the database with a rich, pre-built demo dataset.
 
     This creates realistic signals across all sources, processes them through
     NLP + risk scoring, and creates pre-built incidents with root cause hypotheses.
     """
     # Check if already seeded
-    count = (await session.execute(select(func.count(Signal.id)))).scalar() or 0
+    count = (
+        await session.execute(
+            select(func.count(Signal.id)).where(Signal.tenant_id == tenant_id)
+        )
+    ).scalar() or 0
     if count > 30:
         return {
             "status": "already_seeded",
@@ -147,6 +155,7 @@ async def seed_demo_data(session: AsyncSession = Depends(get_session)):
         ts = now - timedelta(hours=hours_ago)
 
         sig = Signal(
+            tenant_id=tenant_id,
             source=demo["source"],
             source_id=f"demo-{demo['source']}-{i}",
             title=demo["title"],
@@ -181,6 +190,7 @@ async def seed_demo_data(session: AsyncSession = Depends(get_session)):
 
             session.add(RiskAssessment(
                 signal_id=sig.id,
+                tenant_id=tenant_id,
                 composite_score=risk.composite_score,
                 sentiment_component=risk.sentiment_component,
                 anomaly_component=risk.anomaly_component,
@@ -202,6 +212,7 @@ async def seed_demo_data(session: AsyncSession = Depends(get_session)):
         hours_ago = random.uniform(2, 48)
 
         incident = Incident(
+            tenant_id=tenant_id,
             title=demo_inc["title"],
             description=demo_inc["description"],
             severity=demo_inc["severity"],
@@ -226,17 +237,54 @@ async def seed_demo_data(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/reset")
-async def reset_demo_data(session: AsyncSession = Depends(get_session)):
+async def reset_demo_data(
+    tenant_id: str = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
     """Clear all demo data (signals with source_id starting with 'demo-')."""
-    from sqlalchemy import delete
+    demo_signal_ids_result = await session.execute(
+        select(Signal.id).where(
+            Signal.tenant_id == tenant_id,
+            Signal.source_id.like("demo-%"),
+        )
+    )
+    demo_signal_ids = [row[0] for row in demo_signal_ids_result.all()]
 
-    result = await session.execute(
-        delete(Signal).where(Signal.source_id.like("demo-%"))
+    deleted_risk = 0
+    if demo_signal_ids:
+        risk_result = await session.execute(
+            delete(RiskAssessment).where(
+                RiskAssessment.tenant_id == tenant_id,
+                RiskAssessment.signal_id.in_(demo_signal_ids),
+            )
+        )
+        deleted_risk = risk_result.rowcount or 0
+
+    incident_titles = [item["title"] for item in _DEMO_INCIDENTS]
+    incident_result = await session.execute(
+        delete(Incident).where(
+            Incident.tenant_id == tenant_id,
+            Incident.title.in_(incident_titles),
+        )
+    )
+
+    signal_result = await session.execute(
+        delete(Signal).where(
+            Signal.tenant_id == tenant_id,
+            Signal.source_id.like("demo-%"),
+        )
     )
     await session.commit()
 
     return {
         "status": "success",
-        "deleted": result.rowcount,
-        "message": f"Removed {result.rowcount} demo signals.",
+        "deleted": signal_result.rowcount or 0,
+        "deleted_signals": signal_result.rowcount or 0,
+        "deleted_incidents": incident_result.rowcount or 0,
+        "deleted_risk_assessments": deleted_risk,
+        "message": (
+            f"Removed {signal_result.rowcount or 0} demo signals, "
+            f"{incident_result.rowcount or 0} demo incidents, and "
+            f"{deleted_risk} risk assessments for tenant '{tenant_id}'."
+        ),
     }

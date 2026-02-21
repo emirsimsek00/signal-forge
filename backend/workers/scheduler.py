@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import delete
+from sqlalchemy import delete, desc, func, select
 
 from backend.config import settings
 from backend.database import async_session
@@ -17,9 +17,11 @@ from backend.nlp.pipeline import NLPPipeline
 from backend.risk.scorer import RiskScorer
 from backend.models.risk import RiskAssessment
 from backend.models.signal import Signal
+from backend.models.incident import Incident
 from backend.api.websocket import manager as ws_manager
 from backend.anomaly.detector import detector as anomaly_detector
 from backend.incident_manager import auto_incident_manager
+from backend.services.notifier import notify_tenant
 
 logger = logging.getLogger("signalforge.scheduler")
 
@@ -43,6 +45,7 @@ class BackgroundScheduler:
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._last_forecast_incident_check: Optional[datetime] = None
+        self._last_daily_digest_sent: dict[str, datetime] = {}
 
     async def start(self) -> None:
         """Start the background scheduler."""
@@ -81,9 +84,14 @@ class BackgroundScheduler:
         """Single scheduler tick: ingest → process → score → broadcast."""
         async with async_session() as session:
             # Ingest
-            signals = await self.ingestion_manager.ingest_all(session, limit=15)
+            signals = await self.ingestion_manager.ingest_all(
+                session=session,
+                limit=15,
+                tenant_id="default",
+            )
             if signals:
                 logger.info(f"Processing {len(signals)} new signals")
+                critical_contexts: list[dict] = []
 
                 # Process through NLP + Risk
                 for sig in signals:
@@ -112,10 +120,12 @@ class BackgroundScheduler:
                         )
                         sig.risk_score = risk.composite_score
                         sig.risk_tier = risk.tier
+                        sig.tenant_id = sig.tenant_id or "default"
 
                         session.add(
                             RiskAssessment(
                                 signal_id=sig.id,
+                                tenant_id=sig.tenant_id,
                                 composite_score=risk.composite_score,
                                 sentiment_component=risk.sentiment_component,
                                 anomaly_component=risk.anomaly_component,
@@ -126,6 +136,20 @@ class BackgroundScheduler:
                                 explanation=risk.explanation,
                             )
                         )
+
+                        if sig.risk_tier == "critical":
+                            critical_contexts.append(
+                                {
+                                    "id": sig.id,
+                                    "title": sig.title or f"{sig.source} signal",
+                                    "source": sig.source,
+                                    "content": sig.content,
+                                    "summary": sig.summary,
+                                    "risk_score": sig.risk_score,
+                                    "risk_tier": sig.risk_tier,
+                                    "timestamp": sig.timestamp.isoformat() if sig.timestamp else None,
+                                }
+                            )
 
                         # Add to FAISS index
                         self.pipeline.add_to_index(sig.id, processed.embedding)
@@ -152,6 +176,15 @@ class BackgroundScheduler:
                     # Alert broadcast for high/critical
                     if sig.risk_tier in ("high", "critical"):
                         await ws_manager.broadcast_alert(signal_data)
+
+                # Notify configured channels for critical signals.
+                for context in critical_contexts:
+                    try:
+                        await notify_tenant("default", "critical_signal", context, session=session)
+                    except Exception as e:
+                        logger.error(
+                            f"Critical signal notification error for signal {context.get('id')}: {e}"
+                        )
 
                 logger.info(f"Tick complete: {len(signals)} signals processed")
 
@@ -250,6 +283,12 @@ class BackgroundScheduler:
                         }
                     )
 
+            # Dispatch daily digests for tenants subscribed to the trigger.
+            try:
+                await self._dispatch_daily_digests(session=session)
+            except Exception as e:
+                logger.error(f"Daily digest dispatch error: {e}")
+
     def _should_run_forecast_incident_check(self) -> bool:
         if self._last_forecast_incident_check is None:
             return True
@@ -264,6 +303,126 @@ class BackgroundScheduler:
         if result.rowcount > 0:
             await session.commit()
             logger.info(f"Data retention: deleted {result.rowcount} signals older than {settings.retention_days} days")
+
+    async def _dispatch_daily_digests(self, session) -> None:
+        """Send daily digest notifications once per UTC day to subscribed tenants."""
+        from backend.models.notification import NotificationPreference
+
+        now = datetime.utcnow()
+        tenant_result = await session.execute(
+            select(NotificationPreference.tenant_id)
+            .where(
+                NotificationPreference.is_active,
+                NotificationPreference.triggers.like("%daily_digest%"),
+            )
+            .distinct()
+        )
+        tenant_ids = [row[0] for row in tenant_result.all() if row[0]]
+
+        for tenant_id in tenant_ids:
+            if not self._should_send_daily_digest(tenant_id=tenant_id, now=now):
+                continue
+
+            digest = await self._build_daily_digest_context(
+                session=session,
+                tenant_id=tenant_id,
+                now=now,
+            )
+            await notify_tenant(tenant_id, "daily_digest", digest, session=session)
+            self._last_daily_digest_sent[tenant_id] = now
+            logger.info(
+                "Sent daily digest for tenant %s (%s signals, %s active incidents)",
+                tenant_id,
+                digest["total_signals"],
+                digest["active_incidents"],
+            )
+
+    def _should_send_daily_digest(self, tenant_id: str, now: datetime) -> bool:
+        last_sent = self._last_daily_digest_sent.get(tenant_id)
+        if last_sent is None:
+            return True
+        return last_sent.date() != now.date()
+
+    async def _build_daily_digest_context(self, session, tenant_id: str, now: datetime) -> dict:
+        window_start = now - timedelta(hours=24)
+
+        total_signals = (
+            await session.execute(
+                select(func.count(Signal.id)).where(
+                    Signal.tenant_id == tenant_id,
+                    Signal.timestamp >= window_start,
+                )
+            )
+        ).scalar() or 0
+
+        critical_signals = (
+            await session.execute(
+                select(func.count(Signal.id)).where(
+                    Signal.tenant_id == tenant_id,
+                    Signal.timestamp >= window_start,
+                    Signal.risk_tier == "critical",
+                )
+            )
+        ).scalar() or 0
+
+        avg_risk_score = (
+            await session.execute(
+                select(func.avg(Signal.risk_score)).where(
+                    Signal.tenant_id == tenant_id,
+                    Signal.timestamp >= window_start,
+                    Signal.risk_score.isnot(None),
+                )
+            )
+        ).scalar() or 0.0
+
+        active_incidents = (
+            await session.execute(
+                select(func.count(Incident.id)).where(
+                    Incident.tenant_id == tenant_id,
+                    Incident.status.in_(["active", "investigating"]),
+                )
+            )
+        ).scalar() or 0
+
+        new_incidents = (
+            await session.execute(
+                select(func.count(Incident.id)).where(
+                    Incident.tenant_id == tenant_id,
+                    Incident.start_time >= window_start,
+                )
+            )
+        ).scalar() or 0
+
+        top_signals_result = await session.execute(
+            select(Signal)
+            .where(
+                Signal.tenant_id == tenant_id,
+                Signal.timestamp >= window_start,
+            )
+            .order_by(desc(Signal.risk_score), desc(Signal.timestamp))
+            .limit(5)
+        )
+        top_signals = [
+            {
+                "id": sig.id,
+                "source": sig.source,
+                "title": sig.title,
+                "content": sig.content[:200],
+                "risk_score": sig.risk_score,
+                "risk_tier": sig.risk_tier,
+            }
+            for sig in top_signals_result.scalars().all()
+        ]
+
+        return {
+            "date": now.strftime("%Y-%m-%d"),
+            "total_signals": int(total_signals),
+            "critical_signals": int(critical_signals),
+            "active_incidents": int(active_incidents),
+            "new_incidents": int(new_incidents),
+            "avg_risk_score": float(avg_risk_score),
+            "top_signals": top_signals,
+        }
 
 
 # Global scheduler instance

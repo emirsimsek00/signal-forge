@@ -139,7 +139,9 @@ class DemoDataGenerator(SignalSource):
         inject_anomaly = random.random() < 0.35
 
         for i in range(limit):
-            ts = now - timedelta(hours=random.randint(0, 72), minutes=random.randint(0, 59))
+            # Keep generated points within a strict 72h lookback window.
+            offset_seconds = random.uniform(0, 72 * 3600)
+            ts = now - timedelta(seconds=offset_seconds)
             source_type = random.choice(["reddit", "news", "zendesk", "system", "financial"])
 
             if source_type == "reddit":
