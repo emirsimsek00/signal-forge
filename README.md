@@ -78,11 +78,37 @@ source .venv/bin/activate
 # Install dependencies
 pip install -e ".[dev]"
 
-# Start the backend (mock ML mode by default)
+# Apply migrations (required for production)
+alembic upgrade head
+
+# Start the backend
 uvicorn backend.main:app --reload
 ```
 
 The backend starts at `http://localhost:8000`. Mock mode generates realistic demo data without needing any API keys or ML models.
+
+### Database Migrations (Alembic)
+
+SignalForge now uses Alembic for schema changes.
+
+```bash
+# Apply latest schema
+alembic upgrade head
+
+# Create a new migration after model changes
+alembic revision --autogenerate -m "describe change"
+
+# Roll back one migration
+alembic downgrade -1
+```
+
+If you already have an existing production DB created before Alembic:
+
+1. Take a DB backup.
+2. Generate and validate a baseline migration against that schema.
+3. Use `alembic stamp head` only after confirming schema parity.
+
+For greenfield environments, just run `alembic upgrade head`.
 
 ### Frontend
 
@@ -101,6 +127,7 @@ docker compose up --build
 ```
 
 This starts the backend, frontend, and nginx reverse proxy. The app is served on port 80.
+The backend container is configured to run `alembic upgrade head` on startup (`RUN_DB_MIGRATIONS=true` in `docker-compose.yml`).
 
 ## Configuration
 
@@ -110,9 +137,14 @@ Copy `.env.example` to `.env` and fill in any keys you want to use:
 cp .env.example .env
 ```
 
+If an env value contains spaces (for example `NEWSAPI_KEYWORDS`), wrap it in quotes:
+`NEWSAPI_KEYWORDS="cybersecurity,outage,data breach"`.
+
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `DATABASE_URL` | SQLAlchemy async URL | No (defaults to SQLite) |
+| `AUTO_CREATE_SCHEMA` | Auto-run `Base.metadata.create_all` at startup | No (set `false` in production) |
+| `RUN_DB_MIGRATIONS` | Run `alembic upgrade head` before backend start (container mode) | No |
 | `USE_MOCK_ML` | Use mock NLP models | No (defaults to true) |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Reddit API access | No |
 | `NEWSAPI_KEY` | NewsAPI.org key | No |
@@ -120,7 +152,7 @@ cp .env.example .env
 | `STRIPE_API_KEY` | Stripe event ingestion | No |
 | `PAGERDUTY_API_KEY` | PagerDuty incident sync | No |
 | `ALPHA_VANTAGE_KEY` | Financial market data | No |
-| `INGESTION_INTERVAL` | Seconds between ingestion cycles | No (defaults to 300) |
+| `INGESTION_INTERVAL_SECONDS` | Seconds between ingestion cycles | No (defaults to 300) |
 
 No API keys are required to run the app — demo data kicks in automatically.
 

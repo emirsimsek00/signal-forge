@@ -15,6 +15,7 @@ export default function SignupPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
+    const [requiresEmailConfirmation, setRequiresEmailConfirmation] = useState(true);
 
     if (!isSupabaseConfigured) {
         if (typeof window !== 'undefined') router.replace('/');
@@ -26,12 +27,21 @@ export default function SignupPage() {
         if (!supabase) return;
         setLoading(true);
         setError('');
+        setRequiresEmailConfirmation(true);
+
+        const defaultDisplayName = displayName || email.split('@')[0];
+        const defaultWorkspaceName = workspaceName || `${defaultDisplayName}'s Workspace`;
 
         // 1. Create Supabase user
         const { data, error: signupError } = await supabase.auth.signUp({
             email,
             password,
-            options: { data: { display_name: displayName } },
+            options: {
+                data: {
+                    display_name: defaultDisplayName,
+                    workspace_name: defaultWorkspaceName,
+                },
+            },
         });
 
         if (signupError) {
@@ -40,21 +50,24 @@ export default function SignupPage() {
             return;
         }
 
-        // 2. Create tenant + local user via backend callback
-        if (data.user) {
+        // 2. Create tenant + local user via secure backend callback when session token exists.
+        // If email confirmation is enabled and no session is issued yet, backend will auto-provision
+        // from token metadata on first authenticated request after sign-in.
+        if (data.user && data.session?.access_token) {
             try {
                 const res = await fetch(`${API_BASE}/api/auth/callback`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${data.session.access_token}`,
+                    },
                     body: JSON.stringify({
-                        supabase_id: data.user.id,
-                        email: data.user.email,
-                        display_name: displayName || email.split('@')[0],
-                        tenant_name: workspaceName || `${displayName || email.split('@')[0]}'s Workspace`,
+                        display_name: defaultDisplayName,
+                        tenant_name: defaultWorkspaceName,
                     }),
                 });
 
-                if (!res.ok) {
+                if (!res.ok && res.status !== 409) {
                     const err = await res.json();
                     setError(err.detail || 'Failed to create workspace');
                     setLoading(false);
@@ -65,6 +78,8 @@ export default function SignupPage() {
                 setLoading(false);
                 return;
             }
+
+            setRequiresEmailConfirmation(false);
         }
 
         setSuccess(true);
@@ -91,13 +106,24 @@ export default function SignupPage() {
                     maxWidth: 420,
                 }}>
                     <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-                    <h2 style={{ color: '#f8fafc', fontSize: 22, fontWeight: 700 }}>Check your email</h2>
+                    <h2 style={{ color: '#f8fafc', fontSize: 22, fontWeight: 700 }}>
+                        {requiresEmailConfirmation ? 'Check your email' : 'Account created'}
+                    </h2>
                     <p style={{ color: '#94a3b8', fontSize: 14, marginTop: 8 }}>
-                        We sent a confirmation link to <strong style={{ color: '#e2e8f0' }}>{email}</strong>.
-                        Click it to activate your account.
+                        {requiresEmailConfirmation ? (
+                            <>
+                                We sent a confirmation link to <strong style={{ color: '#e2e8f0' }}>{email}</strong>.
+                                Click it to activate your account.
+                            </>
+                        ) : (
+                            <>
+                                Your account and workspace were provisioned successfully.
+                                Continue to your dashboard.
+                            </>
+                        )}
                     </p>
                     <a
-                        href="/login"
+                        href={requiresEmailConfirmation ? '/login' : '/'}
                         style={{
                             display: 'inline-block',
                             marginTop: 24,
@@ -109,7 +135,7 @@ export default function SignupPage() {
                             fontWeight: 600,
                         }}
                     >
-                        Go to Login
+                        {requiresEmailConfirmation ? 'Go to Login' : 'Open Dashboard'}
                     </a>
                 </div>
             </div>
