@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.signal import Signal
-from backend.correlation.correlator import SignalCorrelator, CorrelationResult
+from backend.correlation.correlator import SignalCorrelator
 
 
 @dataclass
@@ -42,6 +42,7 @@ async def build_graph(
     center_signal_id: int,
     session: AsyncSession,
     correlator: SignalCorrelator,
+    tenant_id: str = "default",
     depth: int = 1,
     k_per_node: int = 8,
 ) -> CorrelationGraph:
@@ -67,12 +68,17 @@ async def build_graph(
 
             # Add node
             if sig_id not in nodes_map:
-                node = await _make_node(sig_id, session)
+                node = await _make_node(sig_id, session, tenant_id=tenant_id)
                 if node:
                     nodes_map[sig_id] = node
 
             # Find correlations
-            correlations = await correlator.correlate(sig_id, session, k=k_per_node)
+            correlations = await correlator.correlate(
+                sig_id,
+                session,
+                tenant_id=tenant_id,
+                k=k_per_node,
+            )
 
             for corr in correlations:
                 # Add edge
@@ -86,7 +92,7 @@ async def build_graph(
 
                 # Add related node
                 if corr.related_signal_id not in nodes_map:
-                    node = await _make_node(corr.related_signal_id, session)
+                    node = await _make_node(corr.related_signal_id, session, tenant_id=tenant_id)
                     if node:
                         nodes_map[corr.related_signal_id] = node
 
@@ -109,8 +115,12 @@ async def build_graph(
     )
 
 
-async def _make_node(signal_id: int, session: AsyncSession) -> Optional[GraphNode]:
-    stmt = select(Signal).where(Signal.id == signal_id)
+async def _make_node(
+    signal_id: int,
+    session: AsyncSession,
+    tenant_id: str,
+) -> Optional[GraphNode]:
+    stmt = select(Signal).where(Signal.id == signal_id, Signal.tenant_id == tenant_id)
     result = await session.execute(stmt)
     sig = result.scalar_one_or_none()
     if not sig:

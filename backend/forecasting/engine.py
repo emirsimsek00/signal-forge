@@ -39,11 +39,13 @@ class ForecastEngine:
         metric_name: str,
         horizon: int = 8,
         lookback_hours: int = 168,
+        tenant_id: str | None = None,
     ) -> ForecastResult:
         series = await self._load_metric_series(
             session=session,
             metric_name=metric_name,
             lookback_hours=lookback_hours,
+            tenant_id=tenant_id,
         )
         if not series:
             return ForecastResult(
@@ -65,15 +67,19 @@ class ForecastEngine:
         session: AsyncSession,
         lookback_hours: int = 168,
         max_scan_rows: int = 3000,
+        tenant_id: str | None = None,
     ) -> list[str]:
         since = datetime.utcnow() - timedelta(hours=lookback_hours)
-        result = await session.execute(
+        query = (
             select(Signal.metadata_json)
             .where(Signal.timestamp >= since, Signal.metadata_json.isnot(None))
             .where(Signal.source.in_(["financial", "system"]))
             .order_by(desc(Signal.timestamp))
             .limit(max_scan_rows)
         )
+        if tenant_id:
+            query = query.where(Signal.tenant_id == tenant_id)
+        result = await session.execute(query)
 
         metric_names: set[str] = set()
         for metadata_json in result.scalars().all():
@@ -94,15 +100,19 @@ class ForecastEngine:
         session: AsyncSession,
         metric_name: str,
         lookback_hours: int,
+        tenant_id: str | None = None,
     ) -> list[ForecastPoint]:
         since = datetime.utcnow() - timedelta(hours=lookback_hours)
-        result = await session.execute(
+        query = (
             select(Signal.timestamp, Signal.metadata_json)
             .where(Signal.timestamp >= since, Signal.metadata_json.isnot(None))
             .where(Signal.source.in_(["financial", "system"]))
             .order_by(Signal.timestamp.asc())
             .limit(6000)
         )
+        if tenant_id:
+            query = query.where(Signal.tenant_id == tenant_id)
+        result = await session.execute(query)
 
         points: list[ForecastPoint] = []
         for ts, metadata_json in result.all():

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_session
 from backend.models.incident import Incident
 from backend.models.signal import Signal
+from backend.api.auth import get_tenant_id
 
 router = APIRouter(prefix="/api/brief", tags=["brief"])
 
@@ -51,6 +52,7 @@ def _format_situation(
 async def generate_brief(
     tone: ToneMode = Query(default="executive_concise"),
     lookback_hours: int = Query(default=24, ge=1, le=168),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Generate a structured executive brief from recent signal activity."""
@@ -60,6 +62,7 @@ async def generate_brief(
     total_signals = (
         await session.execute(
             select(func.count()).select_from(Signal).where(Signal.timestamp >= since)
+            .where(Signal.tenant_id == tenant_id)
         )
     ).scalar() or 0
 
@@ -67,6 +70,7 @@ async def generate_brief(
         await session.execute(
             select(func.avg(Signal.risk_score))
             .where(Signal.timestamp >= since)
+            .where(Signal.tenant_id == tenant_id)
             .where(Signal.risk_score.isnot(None))
         )
     ).scalar() or 0.0
@@ -75,6 +79,7 @@ async def generate_brief(
     tier_result = await session.execute(
         select(Signal.risk_tier, func.count().label("count"))
         .where(Signal.timestamp >= since)
+        .where(Signal.tenant_id == tenant_id)
         .where(Signal.risk_tier.isnot(None))
         .group_by(Signal.risk_tier)
     )
@@ -89,7 +94,9 @@ async def generate_brief(
                 func.sum(
                     case((Signal.sentiment_label == "negative", 1), else_=0)
                 ).label("negative"),
-            ).where(Signal.timestamp >= since)
+            )
+            .where(Signal.timestamp >= since)
+            .where(Signal.tenant_id == tenant_id)
         )
     ).one()
     sentiment_total = int(sentiment_row.total or 0)
@@ -99,6 +106,7 @@ async def generate_brief(
     source_result = await session.execute(
         select(Signal.source, func.count().label("count"))
         .where(Signal.timestamp >= since)
+        .where(Signal.tenant_id == tenant_id)
         .group_by(Signal.source)
         .order_by(desc("count"))
         .limit(5)
@@ -111,6 +119,7 @@ async def generate_brief(
         await session.execute(
             select(func.count())
             .select_from(Incident)
+            .where(Incident.tenant_id == tenant_id)
             .where(Incident.status.in_(["active", "investigating"]))
         )
     ).scalar() or 0
@@ -118,6 +127,7 @@ async def generate_brief(
     top_risks_result = await session.execute(
         select(Signal.id, Signal.source, Signal.title, Signal.risk_score, Signal.risk_tier)
         .where(Signal.timestamp >= since)
+        .where(Signal.tenant_id == tenant_id)
         .where(Signal.risk_score.isnot(None))
         .order_by(desc(Signal.risk_score))
         .limit(5)

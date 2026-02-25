@@ -22,6 +22,8 @@ COPY --from=builder /install /usr/local
 
 # Copy application code
 COPY backend/ ./backend/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
 
 # Create non-root user
 RUN groupadd -r signalforge && \
@@ -33,11 +35,12 @@ USER signalforge
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     USE_MOCK_ML=true \
-    DATABASE_URL=sqlite+aiosqlite:///./signalforge.db
+    DATABASE_URL=sqlite+aiosqlite:///./signalforge.db \
+    RUN_DB_MIGRATIONS=false
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "if [ \"$RUN_DB_MIGRATIONS\" = \"true\" ]; then alembic upgrade head; fi && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"]

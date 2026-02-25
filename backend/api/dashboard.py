@@ -60,6 +60,7 @@ async def dashboard_overview(
     # Source distribution
     source_query = (
         select(Signal.source, func.count().label("count"))
+        .where(Signal.tenant_id == tenant_id)
         .group_by(Signal.source)
         .order_by(desc("count"))
     )
@@ -71,7 +72,10 @@ async def dashboard_overview(
 
     # Recent signals (last 10)
     recent = await session.execute(
-        select(Signal).order_by(desc(Signal.timestamp)).limit(10)
+        select(Signal)
+        .where(Signal.tenant_id == tenant_id)
+        .order_by(desc(Signal.timestamp))
+        .limit(10)
     )
     recent_signals = [
         {
@@ -99,7 +103,7 @@ async def dashboard_overview(
             hour_bucket_expr.label("hour_bucket"),
             func.count().label("count"),
         )
-        .where(Signal.timestamp >= window_start)
+        .where(Signal.tenant_id == tenant_id, Signal.timestamp >= window_start)
         .group_by("hour_bucket")
         .order_by("hour_bucket")
     )
@@ -140,19 +144,23 @@ async def dashboard_overview(
 
 @router.get("/risk/overview")
 async def risk_overview(
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Risk scoring overview data."""
     avg_score = (
         await session.execute(
-            select(func.avg(Signal.risk_score)).where(Signal.risk_score.isnot(None))
+            select(func.avg(Signal.risk_score)).where(
+                Signal.tenant_id == tenant_id,
+                Signal.risk_score.isnot(None),
+            )
         )
     ).scalar() or 0.0
 
     tier_counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
     tier_result = await session.execute(
         select(Signal.risk_tier, func.count().label("count"))
-        .where(Signal.risk_tier.isnot(None))
+        .where(Signal.tenant_id == tenant_id, Signal.risk_tier.isnot(None))
         .group_by(Signal.risk_tier)
     )
     for tier, count in tier_result.all():
@@ -164,7 +172,7 @@ async def risk_overview(
     # Top risk signals
     top_risk = await session.execute(
         select(Signal)
-        .where(Signal.risk_score.isnot(None))
+        .where(Signal.tenant_id == tenant_id, Signal.risk_score.isnot(None))
         .order_by(desc(Signal.risk_score))
         .limit(10)
     )
@@ -195,6 +203,7 @@ async def risk_overview(
 
 @router.get("/risk/heatmap")
 async def risk_heatmap(
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Risk heatmap data — source × hour matrix."""
@@ -211,7 +220,7 @@ async def risk_heatmap(
             func.avg(Signal.risk_score).label("avg_score"),
             func.count().label("count"),
         )
-        .where(Signal.risk_score.isnot(None))
+        .where(Signal.tenant_id == tenant_id, Signal.risk_score.isnot(None))
         .group_by("source", "hour")
         .order_by("source", "hour")
     )
@@ -241,16 +250,23 @@ async def risk_heatmap(
 @router.get("/dashboard/timeline")
 async def dashboard_timeline(
     limit: int = Query(20, ge=1, le=100),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Combined timeline of signals and incidents ordered by time."""
     signals_result = await session.execute(
-        select(Signal).order_by(desc(Signal.timestamp)).limit(limit)
+        select(Signal)
+        .where(Signal.tenant_id == tenant_id)
+        .order_by(desc(Signal.timestamp))
+        .limit(limit)
     )
     signals = signals_result.scalars().all()
 
     incidents_result = await session.execute(
-        select(Incident).order_by(desc(Incident.start_time)).limit(limit)
+        select(Incident)
+        .where(Incident.tenant_id == tenant_id)
+        .order_by(desc(Incident.start_time))
+        .limit(limit)
     )
     incidents = incidents_result.scalars().all()
 
@@ -282,6 +298,7 @@ async def dashboard_timeline(
 @router.get("/dashboard/risk-trend")
 async def risk_trend(
     hours: int = Query(72, ge=6, le=168),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Risk score trend over time — hourly averages with tier counts."""
@@ -307,7 +324,11 @@ async def risk_trend(
                 )
             ).label("high_risk_count"),
         )
-        .where(Signal.timestamp >= window_start, Signal.risk_score.isnot(None))
+        .where(
+            Signal.tenant_id == tenant_id,
+            Signal.timestamp >= window_start,
+            Signal.risk_score.isnot(None),
+        )
         .group_by("bucket")
         .order_by("bucket")
     )
@@ -331,6 +352,7 @@ async def risk_trend(
 @router.get("/dashboard/sentiment-drift")
 async def sentiment_drift(
     hours: int = Query(72, ge=6, le=168),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Sentiment trend over time — average sentiment and label distribution."""
@@ -352,7 +374,11 @@ async def sentiment_drift(
             func.sum(func.case((Signal.sentiment_label == "positive", 1), else_=0)).label("positive"),
             func.sum(func.case((Signal.sentiment_label == "neutral", 1), else_=0)).label("neutral"),
         )
-        .where(Signal.timestamp >= window_start, Signal.sentiment_score.isnot(None))
+        .where(
+            Signal.tenant_id == tenant_id,
+            Signal.timestamp >= window_start,
+            Signal.sentiment_score.isnot(None),
+        )
         .group_by("bucket")
         .order_by("bucket")
     )
@@ -378,6 +404,7 @@ async def sentiment_drift(
 @router.get("/dashboard/incident-frequency")
 async def incident_frequency(
     days: int = Query(14, ge=1, le=90),
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Daily incident creation frequency with severity breakdown."""
@@ -399,7 +426,7 @@ async def incident_frequency(
             func.sum(func.case((Incident.severity == "medium", 1), else_=0)).label("medium"),
             func.sum(func.case((Incident.severity == "low", 1), else_=0)).label("low"),
         )
-        .where(Incident.created_at >= window_start)
+        .where(Incident.tenant_id == tenant_id, Incident.created_at >= window_start)
         .group_by("bucket")
         .order_by("bucket")
     )
@@ -419,4 +446,3 @@ async def incident_frequency(
         })
 
     return {"days": days, "points": points}
-

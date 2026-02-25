@@ -25,6 +25,8 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://signalforge:${POSTGRES_PASSWORD:-signalforge-dev}@postgres:5432/signalforge
+      AUTO_CREATE_SCHEMA: "false"
+      RUN_DB_MIGRATIONS: "true"
       USE_MOCK_ML: "true"
       CORS_ORIGINS: '["http://localhost:3000","http://localhost"]'
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-signalforge-2024}

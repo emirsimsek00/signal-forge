@@ -133,6 +133,13 @@ async def seed_demo_data(
     This creates realistic signals across all sources, processes them through
     NLP + risk scoring, and creates pre-built incidents with root cause hypotheses.
     """
+    if not settings.enable_demo_data:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="Demo data is disabled (ENABLE_DEMO_DATA=false)",
+        )
+
     # Check if already seeded
     count = (
         await session.execute(
@@ -242,6 +249,13 @@ async def reset_demo_data(
     session: AsyncSession = Depends(get_session),
 ):
     """Clear all demo data (signals with source_id starting with 'demo-')."""
+    if not settings.enable_demo_data:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="Demo data is disabled (ENABLE_DEMO_DATA=false)",
+        )
+
     demo_signal_ids_result = await session.execute(
         select(Signal.id).where(
             Signal.tenant_id == tenant_id,

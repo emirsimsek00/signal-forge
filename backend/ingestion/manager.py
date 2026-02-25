@@ -75,9 +75,12 @@ class IngestionManager:
         else:
             print("[IngestionManager] ○ Alpha Vantage source skipped (no ALPHA_VANTAGE_KEY)")
 
-        # Always include demo data as a fallback/supplement
-        sources.append(DemoDataGenerator())
-        print("[IngestionManager] ✓ Demo data source enabled")
+        # Include demo data fallback only when explicitly enabled.
+        if settings.enable_demo_data:
+            sources.append(DemoDataGenerator())
+            print("[IngestionManager] ✓ Demo data source enabled")
+        else:
+            print("[IngestionManager] ○ Demo data source disabled (ENABLE_DEMO_DATA=false)")
 
         return sources
 

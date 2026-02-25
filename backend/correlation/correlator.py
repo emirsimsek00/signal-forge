@@ -34,25 +34,26 @@ class SignalCorrelator:
 
     def __init__(self, pipeline: NLPPipeline) -> None:
         self.pipeline = pipeline
-        self._last_indexed_signal_id = 0
+        self._last_indexed_signal_id_by_tenant: dict[str, int] = {}
 
     async def correlate(
         self,
         signal_id: int,
         session: AsyncSession,
+        tenant_id: str = "default",
         k: int = 10,
         time_window_hours: int = 6,
     ) -> list[CorrelationResult]:
         """Find all correlated signals for a given signal."""
         # Fetch the target signal
-        stmt = select(Signal).where(Signal.id == signal_id)
+        stmt = select(Signal).where(Signal.id == signal_id, Signal.tenant_id == tenant_id)
         result = await session.execute(stmt)
         target = result.scalar_one_or_none()
         if not target:
             return []
 
         # Ensure index is populated from DB embeddings so correlation survives restarts.
-        await self._sync_index_from_db(session)
+        await self._sync_index_from_db(session, tenant_id=tenant_id)
 
         correlations: dict[int, CorrelationResult] = {}
 
@@ -60,8 +61,21 @@ class SignalCorrelator:
         if target.embedding_json:
             embedding = json.loads(target.embedding_json)
             similar = self.pipeline.find_similar(embedding, k=k + 1)
+            candidate_ids = [related_id for related_id, _ in similar if related_id != signal_id]
+            allowed_ids: set[int] = set()
+            if candidate_ids:
+                allowed_result = await session.execute(
+                    select(Signal.id).where(
+                        Signal.id.in_(candidate_ids),
+                        Signal.tenant_id == tenant_id,
+                    )
+                )
+                allowed_ids = {int(row[0]) for row in allowed_result.all()}
+
             for related_id, sim_score in similar:
                 if related_id == signal_id:
+                    continue
+                if related_id not in allowed_ids:
                     continue
                 correlations[related_id] = CorrelationResult(
                     signal_id=signal_id,
@@ -79,6 +93,7 @@ class SignalCorrelator:
                 select(Signal)
                 .where(
                     Signal.id != signal_id,
+                    Signal.tenant_id == tenant_id,
                     Signal.timestamp >= window_start,
                     Signal.timestamp <= window_end,
                     Signal.source != target.source,  # cross-source is more interesting
@@ -118,7 +133,11 @@ class SignalCorrelator:
                 if target_entity_texts:
                     stmt = (
                         select(Signal)
-                        .where(Signal.id != signal_id, Signal.entities_json.isnot(None))
+                        .where(
+                            Signal.id != signal_id,
+                            Signal.tenant_id == tenant_id,
+                            Signal.entities_json.isnot(None),
+                        )
                         .order_by(Signal.timestamp.desc())
                         .limit(100)
                     )
@@ -154,12 +173,14 @@ class SignalCorrelator:
         sorted_results = sorted(correlations.values(), key=lambda c: c.score, reverse=True)
         return sorted_results[:k]
 
-    async def _sync_index_from_db(self, session: AsyncSession) -> None:
+    async def _sync_index_from_db(self, session: AsyncSession, tenant_id: str) -> None:
         """Incrementally load stored embeddings from DB into the in-memory vector index."""
+        last_indexed_signal_id = self._last_indexed_signal_id_by_tenant.get(tenant_id, 0)
         stmt = (
             select(Signal.id, Signal.embedding_json)
             .where(
-                Signal.id > self._last_indexed_signal_id,
+                Signal.id > last_indexed_signal_id,
+                Signal.tenant_id == tenant_id,
                 Signal.embedding_json.isnot(None),
             )
             .order_by(Signal.id.asc())
@@ -168,7 +189,7 @@ class SignalCorrelator:
 
         signal_ids: list[int] = []
         embeddings: list[list[float]] = []
-        max_seen = self._last_indexed_signal_id
+        max_seen = last_indexed_signal_id
 
         for signal_id, embedding_json in result.all():
             max_seen = max(max_seen, int(signal_id))
@@ -185,4 +206,4 @@ class SignalCorrelator:
         if signal_ids:
             self.pipeline.add_batch_to_index(signal_ids, embeddings)
 
-        self._last_indexed_signal_id = max_seen
+        self._last_indexed_signal_id_by_tenant[tenant_id] = max_seen

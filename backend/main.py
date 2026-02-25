@@ -60,6 +60,8 @@ def _startup_checks() -> None:
         logger.info(f"✓ Live sources: {', '.join(active)}")
     else:
         logger.info("○ No API keys set — using demo data for all sources")
+    if not settings.enable_demo_data:
+        logger.info("○ Demo data generation disabled (ENABLE_DEMO_DATA=false)")
 
     # Supabase auth status
     if settings.supabase_url:
@@ -161,4 +163,3 @@ async def health_check():
         "websocket_connections": ws_manager.connection_count,
         "scheduler_active": scheduler._running,
     }
-

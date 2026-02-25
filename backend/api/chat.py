@@ -17,6 +17,7 @@ from backend.config import settings
 from backend.database import get_session
 from backend.models.signal import Signal
 from backend.nlp.pipeline import NLPPipeline
+from backend.api.auth import get_tenant_id
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger("signalforge.chat")
@@ -152,11 +153,16 @@ def parse_filters(query: str) -> dict:
 
 async def search_signals(
     session: AsyncSession,
+    tenant_id: str,
     filters: dict,
     limit: int = 15,
 ) -> list[Signal]:
     """Search signals using parsed filters."""
-    query = select(Signal).order_by(desc(Signal.timestamp))
+    query = (
+        select(Signal)
+        .where(Signal.tenant_id == tenant_id)
+        .order_by(desc(Signal.timestamp))
+    )
 
     if "source" in filters:
         query = query.where(Signal.source == filters["source"])
@@ -180,12 +186,12 @@ async def search_signals(
     return list(result.scalars().all())
 
 
-async def get_signal_stats(session: AsyncSession, filters: dict) -> dict:
+async def get_signal_stats(session: AsyncSession, tenant_id: str, filters: dict) -> dict:
     """Get aggregate stats for the filtered signal set."""
     query = select(
         func.count(Signal.id).label("total"),
         func.avg(Signal.risk_score).label("avg_risk"),
-    )
+    ).where(Signal.tenant_id == tenant_id)
 
     if "source" in filters:
         query = query.where(Signal.source == filters["source"])
@@ -269,7 +275,7 @@ async def generate_llm_answer(query: str, signals: list[Signal], stats: dict) ->
 def generate_search_answer(query: str, signals: list[Signal], stats: dict) -> str:
     """Generate a natural language answer for search queries."""
     if not signals:
-        return f"I didn't find any signals matching your query. Try broadening your search or ingesting more data."
+        return "I didn't find any signals matching your query. Try broadening your search or ingesting more data."
 
     answer_parts = [f"Found **{stats['total']} signals** matching your query"]
     if stats["avg_risk"] > 0:
@@ -294,7 +300,7 @@ def generate_search_answer(query: str, signals: list[Signal], stats: dict) -> st
             answer_parts.append(f"- `{s.source}` • {title} (risk: {s.risk_score:.1%})")
 
     # Recent highlights
-    answer_parts.append(f"\n**Most recent:**")
+    answer_parts.append("\n**Most recent:**")
     for s in signals[:5]:
         title = s.title or s.content[:60]
         sentiment = f" [{s.sentiment_label}]" if s.sentiment_label else ""
@@ -315,7 +321,7 @@ def generate_summary_answer(signals: list[Signal], stats: dict) -> str:
         tier_counts[s.risk_tier or "unknown"] = tier_counts.get(s.risk_tier or "unknown", 0) + 1
         sentiment_counts[s.sentiment_label or "unknown"] = sentiment_counts.get(s.sentiment_label or "unknown", 0) + 1
 
-    parts = [f"## Signal Intelligence Summary\n"]
+    parts = ["## Signal Intelligence Summary\n"]
     parts.append(f"Analyzing **{stats['total']} signals** with average risk of **{stats['avg_risk']:.1%}**.\n")
 
     # Risk overview
@@ -370,6 +376,7 @@ def generate_count_answer(query: str, stats: dict, filters: dict) -> str:
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    tenant_id: str = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Process a natural language query about signals."""
@@ -389,8 +396,8 @@ async def chat(
     filters = parse_filters(query)
 
     # 3. Search signals
-    signals = await search_signals(session, filters, limit=15)
-    stats = await get_signal_stats(session, filters)
+    signals = await search_signals(session, tenant_id, filters, limit=15)
+    stats = await get_signal_stats(session, tenant_id, filters)
 
     # 4. Try LLM-powered answer first, fall back to keyword mode
     llm_powered = False
@@ -425,4 +432,3 @@ async def chat(
         signal_count=stats["total"],
         llm_powered=llm_powered,
     )
-

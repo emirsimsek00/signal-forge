@@ -210,7 +210,12 @@ async def explain_signal_risk(
             for sim_id, sim_score in similar_ids:
                 if sim_id == signal_id:
                     continue
-                sim_result = await session.execute(select(Signal).where(Signal.id == sim_id))
+                sim_result = await session.execute(
+                    select(Signal).where(
+                        Signal.id == sim_id,
+                        Signal.tenant_id == tenant_id,
+                    )
+                )
                 sim_signal = sim_result.scalar_one_or_none()
                 if sim_signal:
                     similar_signals.append({

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///./signalforge.db",
         alias="DATABASE_URL",
     )
+    auto_create_schema: bool = Field(default=True, alias="AUTO_CREATE_SCHEMA")
 
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")
@@ -41,6 +42,7 @@ class Settings(BaseSettings):
 
     # ML
     use_mock_ml: bool = Field(default=True, alias="USE_MOCK_ML")
+    enable_demo_data: bool = Field(default=True, alias="ENABLE_DEMO_DATA")
 
     # Supabase Auth
     supabase_url: str = Field(default="", alias="SUPABASE_URL")
