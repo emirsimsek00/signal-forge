@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import {
-    AlertTriangle, Activity, TrendingUp, Frown, RefreshCw,
+    Activity, TrendingUp, Frown, RefreshCw,
     Shield, Clock,
 } from "lucide-react";
 

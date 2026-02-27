@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, Signal, SignalListResponse } from "@/lib/api";
-import { Search, Filter, RefreshCw, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { Filter, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
 const SOURCES = ["all", "reddit", "news", "zendesk", "stripe", "pagerduty", "system", "financial"];
@@ -17,7 +17,6 @@ export default function SignalsPage() {
     const [selected, setSelected] = useState<Signal | null>(null);
 
     useEffect(() => {
-        setLoading(true);
         api
             .listSignals(
                 page, 15,

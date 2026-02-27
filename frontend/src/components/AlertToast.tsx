@@ -6,6 +6,16 @@ import {
     AlertTriangle, X, Shield, TrendingUp, Activity,
 } from "lucide-react";
 
+type AlertPayload = {
+    type?: string;
+    severity?: string;
+    title?: string;
+    description?: string;
+    source?: string;
+    content?: string;
+    risk_tier?: string;
+};
+
 interface Toast {
     id: string;
     severity: "critical" | "high" | "moderate" | "info";
@@ -63,7 +73,7 @@ export default function AlertToast() {
     useWebSocket({
         channels: ["alerts"],
         onAlert: (data: Record<string, unknown>) => {
-            const payload = data as any;
+            const payload = data as AlertPayload;
             if (payload.type === "anomaly") {
                 addToast({
                     severity: payload.severity === "critical" ? "critical" : payload.severity === "high" ? "high" : "moderate",
@@ -86,8 +96,9 @@ export default function AlertToast() {
 
     // Cleanup timers on unmount
     useEffect(() => {
+        const timers = timersRef.current;
         return () => {
-            timersRef.current.forEach((timer) => clearTimeout(timer));
+            timers.forEach((timer) => clearTimeout(timer));
         };
     }, []);
 

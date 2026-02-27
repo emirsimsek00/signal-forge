@@ -213,6 +213,12 @@ frontend/
 | WS | `/ws/signals` | Real-time signal + alert stream |
 | GET | `/api/health` | Health check |
 
+## Operational Readiness
+
+- Product readiness plan: `PRODUCT_READINESS.md`
+- Deployment runbook checklist: `DEPLOYMENT_CHECKLIST.md`
+- Security policy: `SECURITY.md`
+
 ## License
 
 MIT

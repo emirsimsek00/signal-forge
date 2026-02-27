@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, Signal } from "@/lib/api";
-import { Bell, Check, X, AlertTriangle, Clock } from "lucide-react";
+import { Check, X, AlertTriangle, Clock } from "lucide-react";
 
 export default function AlertsPage() {
     const [alerts, setAlerts] = useState<Signal[]>([]);

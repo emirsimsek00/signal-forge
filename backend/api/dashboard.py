@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, desc, cast, Integer
+from sqlalchemy import select, func, desc, cast, Integer, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
@@ -318,7 +318,7 @@ async def risk_trend(
             func.max(Signal.risk_score).label("max_risk"),
             func.count().label("count"),
             func.sum(
-                func.case(
+                case(
                     (Signal.risk_tier.in_(["critical", "high"]), 1),
                     else_=0,
                 )
@@ -370,9 +370,9 @@ async def sentiment_drift(
             hour_bucket_expr.label("bucket"),
             func.avg(Signal.sentiment_score).label("avg_sentiment"),
             func.count().label("total"),
-            func.sum(func.case((Signal.sentiment_label == "negative", 1), else_=0)).label("negative"),
-            func.sum(func.case((Signal.sentiment_label == "positive", 1), else_=0)).label("positive"),
-            func.sum(func.case((Signal.sentiment_label == "neutral", 1), else_=0)).label("neutral"),
+            func.sum(case((Signal.sentiment_label == "negative", 1), else_=0)).label("negative"),
+            func.sum(case((Signal.sentiment_label == "positive", 1), else_=0)).label("positive"),
+            func.sum(case((Signal.sentiment_label == "neutral", 1), else_=0)).label("neutral"),
         )
         .where(
             Signal.tenant_id == tenant_id,
@@ -421,10 +421,10 @@ async def incident_frequency(
         select(
             day_bucket_expr.label("bucket"),
             func.count().label("total"),
-            func.sum(func.case((Incident.severity == "critical", 1), else_=0)).label("critical"),
-            func.sum(func.case((Incident.severity == "high", 1), else_=0)).label("high"),
-            func.sum(func.case((Incident.severity == "medium", 1), else_=0)).label("medium"),
-            func.sum(func.case((Incident.severity == "low", 1), else_=0)).label("low"),
+            func.sum(case((Incident.severity == "critical", 1), else_=0)).label("critical"),
+            func.sum(case((Incident.severity == "high", 1), else_=0)).label("high"),
+            func.sum(case((Incident.severity == "medium", 1), else_=0)).label("medium"),
+            func.sum(case((Incident.severity == "low", 1), else_=0)).label("low"),
         )
         .where(Incident.tenant_id == tenant_id, Incident.created_at >= window_start)
         .group_by("bucket")

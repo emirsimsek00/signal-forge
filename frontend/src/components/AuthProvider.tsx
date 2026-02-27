@@ -27,16 +27,31 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [tenant, setTenant] = useState<AuthContextType['tenant']>(null);
+    const [loading, setLoading] = useState(() => (supabase ? true : false));
+    const [tenant, setTenant] = useState<AuthContextType['tenant']>(() => (
+        supabase ? null : { id: 'default', name: 'Demo Workspace', slug: 'demo' }
+    ));
 
     const isDemo = !isSupabaseConfigured;
+
+    const fetchTenant = useCallback(async (accessToken: string) => {
+        try {
+            const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+            const res = await fetch(`${API_BASE}/api/auth/me`, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setTenant(data.tenant);
+            }
+        } catch {
+            // Silently fail — tenant info is non-critical
+        }
+    }, []);
 
     useEffect(() => {
         if (!supabase) {
             // Demo mode — no auth needed
-            setLoading(false);
-            setTenant({ id: 'default', name: 'Demo Workspace', slug: 'demo' });
             return;
         }
 
@@ -64,22 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         );
 
         return () => subscription.unsubscribe();
-    }, []);
-
-    const fetchTenant = useCallback(async (accessToken: string) => {
-        try {
-            const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-            const res = await fetch(`${API_BASE}/api/auth/me`, {
-                headers: { Authorization: `Bearer ${accessToken}` },
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setTenant(data.tenant);
-            }
-        } catch {
-            // Silently fail — tenant info is non-critical
-        }
-    }, []);
+    }, [fetchTenant]);
 
     const signOut = useCallback(async () => {
         if (supabase) {

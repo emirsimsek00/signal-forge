@@ -45,7 +45,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const reconnectDelayRef = useRef(1000);
 
-    const connect = useCallback(() => {
+    const connect = useCallback(function connectSocket() {
         if (!enabled) return;
 
         const channelsParam = channels.join(",");
@@ -96,7 +96,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
                 if (enabled) {
                     reconnectTimeoutRef.current = setTimeout(() => {
                         reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 30000);
-                        connect();
+                        connectSocket();
                     }, reconnectDelayRef.current);
                 }
             };

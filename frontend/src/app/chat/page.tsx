@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api, ChatResponse, ChatCitedSignal } from "@/lib/api";
 import {
-    MessageSquare, Send, Loader2, AlertTriangle, Search, BarChart3,
+    MessageSquare, Send, Loader2, Search, BarChart3,
     Hash, Sparkles, ExternalLink,
 } from "lucide-react";
 
@@ -75,7 +75,7 @@ export default function ChatPage() {
                 timestamp: new Date(),
             };
             setMessages((prev) => [...prev, assistantMsg]);
-        } catch (e) {
+        } catch {
             const errMsg: Message = {
                 id: `e-${Date.now()}`,
                 role: "assistant",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { api, type CorrelationGraphData, type Signal } from "@/lib/api";
 import CorrelationGraph from "@/components/CorrelationGraph";
 import { Search, GitBranch, Loader, Info } from "lucide-react";
@@ -21,7 +21,7 @@ export default function CorrelationPage() {
             setGraphData(data);
             const signal = await api.getSignal(id);
             setSelectedSignal(signal);
-        } catch (err) {
+        } catch {
             setError("Could not load correlation graph. Make sure the signal ID exists.");
             setGraphData(null);
         } finally {
