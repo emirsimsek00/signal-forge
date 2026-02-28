@@ -165,6 +165,22 @@ python -m pytest backend/tests/ -v
 
 The test suite covers ingestion, NLP pipeline, risk scoring, correlation engine, anomaly detection, forecasting, incident management, and API transitions.
 
+### One-command local checks
+
+```bash
+./scripts/run_local_check.sh
+```
+
+This runs backend tests, frontend lint/build, starts a local backend, and executes real-world smoke flows.
+
+### One-command UI startup
+
+```bash
+./scripts/start_ui.sh
+```
+
+This starts backend + frontend and opens the app in your browser.
+
 ## Project Structure
 
 ```
