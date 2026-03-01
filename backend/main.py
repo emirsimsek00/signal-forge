@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
+
+from sqlalchemy import text
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -13,7 +17,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from backend.config import settings
-from backend.database import init_db
+from backend.database import engine, init_db
 from backend.logging_config import setup_logging
 
 from backend.api.auth import router as auth_router
@@ -125,6 +129,30 @@ app.add_middleware(
 )
 
 
+# Request tracing + access log middleware
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    start = time.perf_counter()
+
+    response: Response = await call_next(request)
+
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
+        },
+    )
+    return response
+
+
 # Security headers middleware
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -169,13 +197,51 @@ async def root():
     )
 
 
+async def _db_ready() -> bool:
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        logger.exception("database readiness check failed")
+        return False
+
+
 @app.get("/api/health")
 async def health_check():
     from backend.api.websocket import manager as ws_manager
+
+    database_ready = await _db_ready()
+    status = "healthy" if database_ready else "degraded"
+
     return {
-        "status": "healthy",
+        "status": status,
         "service": "signalforge",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "websocket_connections": ws_manager.connection_count,
         "scheduler_active": scheduler._running,
+        "database_ready": database_ready,
+    }
+
+
+@app.get("/api/health/live")
+async def liveness_check():
+    return {"status": "alive", "service": "signalforge"}
+
+
+@app.get("/api/health/ready")
+async def readiness_check(response: Response):
+    database_ready = await _db_ready()
+    scheduler_ready = scheduler._running
+    ready = database_ready and scheduler_ready
+
+    if not ready:
+        response.status_code = 503
+
+    return {
+        "status": "ready" if ready else "not_ready",
+        "checks": {
+            "database": database_ready,
+            "scheduler": scheduler_ready,
+        },
     }

@@ -24,8 +24,18 @@ class JSONFormatter(logging.Formatter):
         if record.exc_info and record.exc_info[1]:
             log_entry["exception"] = self.formatException(record.exc_info)
 
+        # Include request context if middleware injects it.
+        for key in ("request_id", "method", "path", "status_code", "duration_ms"):
+            value = getattr(record, key, None)
+            if value is not None:
+                log_entry[key] = value
+
         # Use simple key=value format for readability in dev
         parts = [f"[{log_entry['level']:<7}]", f"{log_entry['timestamp']}", f"{log_entry['message']}"]
+        for key in ("request_id", "method", "path", "status_code", "duration_ms"):
+            if key in log_entry:
+                parts.append(f"{key}={log_entry[key]}")
+
         if record.exc_info and record.exc_info[1]:
             parts.append(f"\n{log_entry['exception']}")
 
