@@ -36,6 +36,7 @@ from backend.api.simulator import router as simulator_router
 from backend.api.settings import router as settings_router
 from backend.api.notifications import router as notifications_router
 from backend.workers.scheduler import scheduler
+from backend.observability.metrics import metrics
 
 logger = logging.getLogger("signalforge")
 
@@ -47,6 +48,12 @@ def _startup_checks() -> None:
     """Log warnings for misconfigured or missing settings."""
     if settings.jwt_secret == "change-me-in-production-signalforge-2024":
         logger.warning("⚠  JWT_SECRET is using the default value — set a strong secret for production")
+
+    if settings.is_production and not settings.cors_origins_list:
+        logger.warning("⚠  APP_ENV=production but CORS_ORIGINS is empty")
+
+    if settings.is_production and "sqlite" in settings.database_url:
+        logger.warning("⚠  APP_ENV=production with SQLite; use PostgreSQL for reliability")
     if not settings.openai_api_key:
         logger.info("○ No OPENAI_API_KEY — AI Chat will use keyword search mode")
     if "sqlite" in settings.database_url:
@@ -140,6 +147,7 @@ async def request_context(request: Request, call_next):
 
     duration_ms = round((time.perf_counter() - start) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
+    metrics.observe_request(request.url.path, response.status_code, duration_ms)
     logger.info(
         "request completed",
         extra={
@@ -227,6 +235,15 @@ async def health_check():
 @app.get("/api/health/live")
 async def liveness_check():
     return {"status": "alive", "service": "signalforge"}
+
+
+@app.get("/api/metrics")
+async def get_metrics():
+    return {
+        "service": "signalforge",
+        "version": "0.6.0",
+        "metrics": metrics.snapshot(),
+    }
 
 
 @app.get("/api/health/ready")

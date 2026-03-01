@@ -160,6 +160,7 @@ If an env value contains spaces (for example `NEWSAPI_KEYWORDS`), wrap it in quo
 | `DATABASE_URL` | SQLAlchemy async URL | No (defaults to SQLite) |
 | `AUTO_CREATE_SCHEMA` | Auto-run `Base.metadata.create_all` at startup | No (set `false` in production) |
 | `RUN_DB_MIGRATIONS` | Run `alembic upgrade head` before backend start (container mode) | No |
+| `APP_ENV` | Environment mode (`development` or `production`) | No (defaults to development) |
 | `USE_MOCK_ML` | Use mock NLP models | No (defaults to true) |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Reddit API access | No |
 | `NEWSAPI_KEY` | NewsAPI.org key | No |
@@ -226,7 +227,10 @@ frontend/
 | GET | `/api/forecast/{metric}` | Generate time-series forecast |
 | GET | `/api/brief` | Executive briefing |
 | WS | `/ws/signals` | Real-time signal + alert stream |
-| GET | `/api/health` | Health check |
+| GET | `/api/health` | Health check summary |
+| GET | `/api/health/live` | Liveness probe |
+| GET | `/api/health/ready` | Readiness probe (DB + scheduler) |
+| GET | `/api/metrics` | In-process request/latency metrics snapshot |
 
 ## Operational Readiness
 

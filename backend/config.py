@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
     cors_origins: str = Field(default='["http://localhost:3000"]', alias="CORS_ORIGINS")
+    app_env: str = Field(default="development", alias="APP_ENV")
 
     # API Keys (optional — demo data used when missing)
     reddit_client_id: str = Field(default="", alias="REDDIT_CLIENT_ID")
@@ -88,6 +89,10 @@ class Settings(BaseSettings):
         default=300,
         validation_alias=AliasChoices("INGESTION_INTERVAL_SECONDS", "INGESTION_INTERVAL"),
     )
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"production", "prod"}
 
     @property
     def cors_origins_list(self) -> list[str]:
