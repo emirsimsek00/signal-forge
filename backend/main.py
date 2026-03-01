@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 
 from sqlalchemy import text
@@ -40,8 +41,26 @@ from backend.observability.metrics import metrics
 
 logger = logging.getLogger("signalforge")
 
-# Rate limiter
+# Baseline global rate limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
+
+# Route-specific in-memory fixed-window limits (per IP + method + path bucket)
+_ROUTE_LIMITS: list[tuple[str, str, int, int]] = [
+    ("POST", "/api/signals/ingest", 10, 60),
+    ("POST", "/api/incidents", 20, 60),
+    ("POST", "/api/incidents/", 60, 60),
+    ("POST", "/api/demo/seed", 5, 60),
+    ("POST", "/api/demo/reset", 5, 60),
+    ("POST", "/api/webhooks/", 120, 60),
+]
+_route_hits: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _matching_route_limit(method: str, path: str) -> tuple[int, int] | None:
+    for m, prefix, max_hits, window_s in _ROUTE_LIMITS:
+        if method == m and (path == prefix or path.startswith(prefix)):
+            return (max_hits, window_s)
+    return None
 
 
 def _startup_checks() -> None:
@@ -150,6 +169,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Route-specific rate limiting middleware
+@app.middleware("http")
+async def route_rate_limit(request: Request, call_next):
+    matched = _matching_route_limit(request.method, request.url.path)
+    if matched:
+        max_hits, window_s = matched
+        client = request.client.host if request.client else "unknown"
+        key = f"{client}:{request.method}:{request.url.path}"
+        now = time.time()
+        bucket = _route_hits[key]
+
+        while bucket and (now - bucket[0]) > window_s:
+            bucket.popleft()
+
+        if len(bucket) >= max_hits:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Too Many Requests",
+                    "limit": max_hits,
+                    "window_seconds": window_s,
+                },
+            )
+
+        bucket.append(now)
+
+    return await call_next(request)
 
 
 # Request tracing + access log middleware

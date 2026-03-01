@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
 from backend.forecasting.engine import ForecastEngine
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 
 router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 engine = ForecastEngine()
@@ -18,7 +18,7 @@ async def get_forecast(
     metric_name: str = Query(default="mrr", min_length=1, max_length=120),
     horizon: int = Query(default=8, ge=1, le=72),
     lookback_hours: int = Query(default=168, ge=6, le=24 * 60),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Forecast a metric using recent time-series signals."""
@@ -49,7 +49,7 @@ async def get_forecast(
 @router.get("/metrics")
 async def list_forecast_metrics(
     lookback_hours: int = Query(default=168, ge=6, le=24 * 60),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """List available metric names that can be forecasted."""

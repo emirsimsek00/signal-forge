@@ -244,10 +244,18 @@ require_admin = require_role("admin", "owner")
 # ── Tenant resolution ────────────────────────────────────────
 
 def get_tenant_id(user: Optional[User] = Depends(get_current_user)) -> str:
-    """Resolve tenant_id — from authenticated user or default."""
+    """Resolve tenant_id — from authenticated user or default.
+
+    Kept for backward compatibility in non-protected flows.
+    """
     if user is not None:
         return user.tenant_id
     return DEFAULT_TENANT_ID
+
+
+def get_required_tenant_id(user: User = Depends(require_auth)) -> str:
+    """Resolve tenant_id for protected APIs (authentication required)."""
+    return user.tenant_id
 
 
 # ── Endpoints ─────────────────────────────────────────────────

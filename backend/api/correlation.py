@@ -13,7 +13,7 @@ from backend.database import get_session
 from backend.nlp.pipeline import NLPPipeline
 from backend.correlation.correlator import SignalCorrelator
 from backend.correlation.graph import build_graph
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 
 
 router = APIRouter(prefix="/api/correlation", tags=["correlation"])
@@ -27,7 +27,7 @@ _correlator = SignalCorrelator(pipeline=_pipeline)
 async def get_correlations(
     signal_id: int,
     k: int = Query(default=10, ge=1, le=50),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Find signals correlated to the given signal."""
@@ -52,7 +52,7 @@ async def get_correlation_graph(
     signal_id: int,
     depth: int = Query(default=1, ge=1, le=3),
     k: int = Query(default=8, ge=1, le=20),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Build a correlation graph centered on a signal for D3.js visualization."""

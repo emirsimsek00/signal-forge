@@ -13,14 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_session
 from backend.models.signal import Signal
 from backend.models.incident import Incident
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
 
 @router.get("/dashboard/overview")
 async def dashboard_overview(
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Aggregated dashboard overview — KPI cards data."""
@@ -146,7 +146,7 @@ async def dashboard_overview(
 
 @router.get("/risk/overview")
 async def risk_overview(
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Risk scoring overview data."""
@@ -205,7 +205,7 @@ async def risk_overview(
 
 @router.get("/risk/heatmap")
 async def risk_heatmap(
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Risk heatmap data — source × hour matrix."""
@@ -252,7 +252,7 @@ async def risk_heatmap(
 @router.get("/dashboard/timeline")
 async def dashboard_timeline(
     limit: int = Query(20, ge=1, le=100),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Combined timeline of signals and incidents ordered by time."""
@@ -300,7 +300,7 @@ async def dashboard_timeline(
 @router.get("/dashboard/risk-trend")
 async def risk_trend(
     hours: int = Query(72, ge=6, le=168),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Risk score trend over time — hourly averages with tier counts."""
@@ -354,7 +354,7 @@ async def risk_trend(
 @router.get("/dashboard/sentiment-drift")
 async def sentiment_drift(
     hours: int = Query(72, ge=6, le=168),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Sentiment trend over time — average sentiment and label distribution."""
@@ -406,7 +406,7 @@ async def sentiment_drift(
 @router.get("/dashboard/incident-frequency")
 async def incident_frequency(
     days: int = Query(14, ge=1, le=90),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Daily incident creation frequency with severity breakdown."""

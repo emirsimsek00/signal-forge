@@ -19,7 +19,7 @@ from backend.config import settings
 from backend.database import get_session
 from backend.models.signal import Signal
 from backend.nlp.pipeline import NLPPipeline
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 logger = logging.getLogger("signalforge.chat")
@@ -378,7 +378,7 @@ def generate_count_answer(query: str, stats: dict, filters: dict) -> str:
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Process a natural language query about signals."""

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_session
 from backend.models.incident import Incident
 from backend.models.signal import Signal
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 
 router = APIRouter(prefix="/api/brief", tags=["brief"])
 
@@ -54,7 +54,7 @@ def _format_situation(
 async def generate_brief(
     tone: ToneMode = Query(default="executive_concise"),
     lookback_hours: int = Query(default=24, ge=1, le=168),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Generate a structured executive brief from recent signal activity."""

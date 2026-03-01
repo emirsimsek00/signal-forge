@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.websocket import manager as ws_manager
 from backend.database import get_session
 from backend.models.incident import Incident, IncidentCreate, IncidentResponse
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
@@ -22,7 +22,7 @@ async def list_incidents(
     status: str | None = Query(None),
     severity: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """List incidents with optional filtering."""
@@ -42,7 +42,7 @@ async def list_incidents(
 @router.get("/{incident_id}", response_model=IncidentResponse)
 async def get_incident(
     incident_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(select(Incident).where(Incident.id == incident_id, Incident.tenant_id == tenant_id))
@@ -55,7 +55,7 @@ async def get_incident(
 @router.post("", response_model=IncidentResponse, status_code=201)
 async def create_incident(
     data: IncidentCreate,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     incident = Incident(
@@ -176,7 +176,7 @@ async def _transition_incident(
 @router.post("/{incident_id}/acknowledge", response_model=IncidentResponse)
 async def acknowledge_incident(
     incident_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Move an incident from active to investigating."""
@@ -186,7 +186,7 @@ async def acknowledge_incident(
 @router.post("/{incident_id}/resolve", response_model=IncidentResponse)
 async def resolve_incident(
     incident_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Mark an incident as resolved."""
@@ -196,7 +196,7 @@ async def resolve_incident(
 @router.post("/{incident_id}/dismiss", response_model=IncidentResponse)
 async def dismiss_incident(
     incident_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Dismiss an incident as non-actionable."""
@@ -206,7 +206,7 @@ async def dismiss_incident(
 @router.post("/{incident_id}/reopen", response_model=IncidentResponse)
 async def reopen_incident(
     incident_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Re-open a previously resolved or dismissed incident."""
@@ -221,7 +221,7 @@ from backend.models.note import Note, NoteCreate, NoteResponse
 @router.get("/{incident_id}/notes", response_model=list[NoteResponse])
 async def list_notes(
     incident_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """List all notes for an incident."""
@@ -247,7 +247,7 @@ async def list_notes(
 async def add_note(
     incident_id: int,
     data: NoteCreate,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Add a note to an incident."""
@@ -279,7 +279,7 @@ async def add_note(
 @router.get("/{incident_id}/timeline")
 async def get_incident_timeline(
     incident_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Get the full timeline for an incident workspace.

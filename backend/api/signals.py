@@ -15,7 +15,7 @@ from backend.models.risk import RiskAssessment
 from backend.ingestion.manager import IngestionManager
 from backend.nlp.pipeline import NLPPipeline
 from backend.risk.scorer import RiskScorer
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 from backend.services.notifier import notify_tenant
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
@@ -31,7 +31,7 @@ async def list_signals(
     risk_tier: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """List signals with optional filtering."""
@@ -62,7 +62,7 @@ async def list_signals(
 @router.get("/{signal_id}", response_model=SignalResponse)
 async def get_signal(
     signal_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Get a single signal by ID."""
@@ -77,7 +77,7 @@ async def get_signal(
 @router.post("/ingest")
 async def trigger_ingestion(
     count: int = Query(30, ge=1, le=200),
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Trigger signal ingestion, NLP processing, and risk scoring."""
@@ -172,7 +172,7 @@ async def trigger_ingestion(
 @router.get("/{signal_id}/explain")
 async def explain_signal_risk(
     signal_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Return the full risk explanation for a signal.

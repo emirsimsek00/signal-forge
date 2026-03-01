@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
 from backend.models.signal import Signal
-from backend.api.auth import get_tenant_id
+from backend.api.auth import get_required_tenant_id
 
 logger = logging.getLogger("signalforge.simulator")
 router = APIRouter(prefix="/api/simulator", tags=["simulator"])
@@ -41,7 +41,7 @@ class ScenarioResult(BaseModel):
 @router.post("/run", response_model=ScenarioResult)
 async def run_scenario(
     request: ScenarioRequest,
-    tenant_id: str = Depends(get_tenant_id),
+    tenant_id: str = Depends(get_required_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
     """Simulate risk impact of 'what if' scenario changes.
