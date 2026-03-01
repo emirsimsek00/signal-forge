@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
-from backend.api.auth import require_auth, get_tenant_id
+from backend.api.auth import require_auth
 from backend.models.user import User
 from backend.models.notification import (
     NotificationPreference,
@@ -28,13 +27,13 @@ logger = logging.getLogger("signalforge.notifications")
 
 @router.get("/preferences")
 async def list_preferences(
-    tenant_id: str = Depends(get_tenant_id),
+    user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ):
     """List notification preferences for the current tenant."""
     result = await session.execute(
         select(NotificationPreference)
-        .where(NotificationPreference.tenant_id == tenant_id)
+        .where(NotificationPreference.tenant_id == user.tenant_id)
         .order_by(desc(NotificationPreference.created_at))
     )
     prefs = result.scalars().all()
@@ -49,7 +48,7 @@ async def list_preferences(
 @router.post("/preferences", status_code=201)
 async def create_preference(
     body: NotificationPreferenceCreate,
-    tenant_id: str = Depends(get_tenant_id),
+    user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ):
     """Create a notification preference."""
@@ -62,7 +61,7 @@ async def create_preference(
         raise HTTPException(status_code=400, detail=f"Invalid triggers: {invalid}")
 
     pref = NotificationPreference(
-        tenant_id=tenant_id,
+        tenant_id=user.tenant_id,
         channel=body.channel,
         target=body.target,
         triggers=json.dumps(body.triggers),
@@ -78,14 +77,14 @@ async def create_preference(
 @router.delete("/preferences/{pref_id}")
 async def delete_preference(
     pref_id: int,
-    tenant_id: str = Depends(get_tenant_id),
+    user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ):
     """Delete a notification preference."""
     result = await session.execute(
         select(NotificationPreference).where(
             NotificationPreference.id == pref_id,
-            NotificationPreference.tenant_id == tenant_id,
+            NotificationPreference.tenant_id == user.tenant_id,
         )
     )
     pref = result.scalar_one_or_none()
@@ -100,13 +99,13 @@ async def delete_preference(
 @router.get("/log")
 async def list_logs(
     limit: int = 50,
-    tenant_id: str = Depends(get_tenant_id),
+    user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ):
     """View notification delivery log."""
     result = await session.execute(
         select(NotificationLog)
-        .where(NotificationLog.tenant_id == tenant_id)
+        .where(NotificationLog.tenant_id == user.tenant_id)
         .order_by(desc(NotificationLog.created_at))
         .limit(limit)
     )
@@ -122,7 +121,7 @@ async def list_logs(
 @router.post("/test")
 async def test_notification(
     body: dict,
-    tenant_id: str = Depends(get_tenant_id),
+    user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ):
     """Send a test notification.
@@ -155,7 +154,7 @@ async def test_notification(
 
         # Log it
         log = NotificationLog(
-            tenant_id=tenant_id,
+            tenant_id=user.tenant_id,
             channel=channel,
             trigger="test",
             subject="Test notification",
@@ -168,7 +167,7 @@ async def test_notification(
 
     except Exception as exc:
         log = NotificationLog(
-            tenant_id=tenant_id,
+            tenant_id=user.tenant_id,
             channel=channel,
             trigger="test",
             subject="Test notification",

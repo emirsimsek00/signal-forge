@@ -14,11 +14,12 @@ from backend.api.simulator import ScenarioRequest, run_scenario
 from backend.models.incident import Incident
 from backend.models.risk import RiskAssessment
 from backend.models.signal import Signal
+from backend.models.user import User
 
 
 @pytest.mark.asyncio
 async def test_seed_demo_data_assigns_tenant(db_session):
-    result = await seed_demo_data(tenant_id="tenant-a", session=db_session)
+    result = await seed_demo_data(user=User(tenant_id="tenant-a", supabase_id="sb-a", email="a@example.com", display_name="A", role="owner"), session=db_session)
     assert result["status"] in {"success", "already_seeded"}
 
     signal_count = (
@@ -44,10 +45,10 @@ async def test_seed_demo_data_assigns_tenant(db_session):
 
 @pytest.mark.asyncio
 async def test_reset_demo_data_only_affects_current_tenant(db_session):
-    await seed_demo_data(tenant_id="tenant-a", session=db_session)
-    await seed_demo_data(tenant_id="tenant-b", session=db_session)
+    await seed_demo_data(user=User(tenant_id="tenant-a", supabase_id="sb-a", email="a@example.com", display_name="A", role="owner"), session=db_session)
+    await seed_demo_data(user=User(tenant_id="tenant-b", supabase_id="sb-b", email="b@example.com", display_name="B", role="owner"), session=db_session)
 
-    reset_result = await reset_demo_data(tenant_id="tenant-a", session=db_session)
+    reset_result = await reset_demo_data(user=User(tenant_id="tenant-a", supabase_id="sb-a", email="a@example.com", display_name="A", role="owner"), session=db_session)
     assert reset_result["status"] == "success"
 
     tenant_a_signals = (
