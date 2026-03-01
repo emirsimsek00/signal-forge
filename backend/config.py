@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, alias="PORT")
     cors_origins: str = Field(default='["http://localhost:3000"]', alias="CORS_ORIGINS")
     app_env: str = Field(default="development", alias="APP_ENV")
+    strict_startup_validation: bool = Field(default=False, alias="STRICT_STARTUP_VALIDATION")
 
     # API Keys (optional — demo data used when missing)
     reddit_client_id: str = Field(default="", alias="REDDIT_CLIENT_ID")

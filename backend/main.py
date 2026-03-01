@@ -46,14 +46,25 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
 def _startup_checks() -> None:
     """Log warnings for misconfigured or missing settings."""
+    startup_errors: list[str] = []
+
     if settings.jwt_secret == "change-me-in-production-signalforge-2024":
-        logger.warning("⚠  JWT_SECRET is using the default value — set a strong secret for production")
+        msg = "JWT_SECRET is using the default value — set a strong secret for production"
+        logger.warning(f"⚠  {msg}")
+        if settings.is_production:
+            startup_errors.append(msg)
 
     if settings.is_production and not settings.cors_origins_list:
-        logger.warning("⚠  APP_ENV=production but CORS_ORIGINS is empty")
+        msg = "APP_ENV=production but CORS_ORIGINS is empty"
+        logger.warning(f"⚠  {msg}")
+        startup_errors.append(msg)
 
     if settings.is_production and "sqlite" in settings.database_url:
-        logger.warning("⚠  APP_ENV=production with SQLite; use PostgreSQL for reliability")
+        msg = "APP_ENV=production with SQLite; use PostgreSQL for reliability"
+        logger.warning(f"⚠  {msg}")
+
+    if settings.strict_startup_validation and startup_errors:
+        raise RuntimeError("Startup validation failed: " + " | ".join(startup_errors))
     if not settings.openai_api_key:
         logger.info("○ No OPENAI_API_KEY — AI Chat will use keyword search mode")
     if "sqlite" in settings.database_url:
@@ -169,6 +180,10 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+    if settings.is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 

@@ -161,6 +161,7 @@ If an env value contains spaces (for example `NEWSAPI_KEYWORDS`), wrap it in quo
 | `AUTO_CREATE_SCHEMA` | Auto-run `Base.metadata.create_all` at startup | No (set `false` in production) |
 | `RUN_DB_MIGRATIONS` | Run `alembic upgrade head` before backend start (container mode) | No |
 | `APP_ENV` | Environment mode (`development` or `production`) | No (defaults to development) |
+| `STRICT_STARTUP_VALIDATION` | Fail startup on critical production misconfiguration | No (defaults to false) |
 | `USE_MOCK_ML` | Use mock NLP models | No (defaults to true) |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Reddit API access | No |
 | `NEWSAPI_KEY` | NewsAPI.org key | No |
@@ -238,6 +239,7 @@ frontend/
 - Product architecture deep analysis: `PRODUCT_ARCHITECTURE_ANALYSIS.md`
 - Deployment checklist: `DEPLOYMENT_CHECKLIST.md`
 - Operations runbook: `RUNBOOK.md`
+- Backup/restore playbook: `BACKUP_RESTORE.md`
 - SLO/SLI targets: `SLO_SLI.md`
 - Security policy: `SECURITY.md`
 
