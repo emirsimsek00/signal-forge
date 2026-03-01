@@ -231,7 +231,10 @@ frontend/
 ## Operational Readiness
 
 - Product readiness plan: `PRODUCT_READINESS.md`
-- Deployment runbook checklist: `DEPLOYMENT_CHECKLIST.md`
+- Product architecture deep analysis: `PRODUCT_ARCHITECTURE_ANALYSIS.md`
+- Deployment checklist: `DEPLOYMENT_CHECKLIST.md`
+- Operations runbook: `RUNBOOK.md`
+- SLO/SLI targets: `SLO_SLI.md`
 - Security policy: `SECURITY.md`
 
 ## License

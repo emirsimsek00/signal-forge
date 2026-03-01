@@ -11,8 +11,9 @@ Use this checklist before shipping to staging/prod.
 ## Release readiness
 - [ ] Changelog/release notes updated
 - [ ] Rollback plan defined
-- [ ] Health endpoint checks verified (`/api/health`)
+- [ ] Health endpoints verified (`/api/health`, `/api/health/live`, `/api/health/ready`)
 - [ ] Incident notification channel configured
+- [ ] Frontend ↔ backend URL wiring validated (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`, `CORS_ORIGINS`)
 
 ## Security
 - [ ] CORS restricted to trusted origins
