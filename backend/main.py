@@ -63,6 +63,11 @@ def _startup_checks() -> None:
         msg = "APP_ENV=production with SQLite; use PostgreSQL for reliability"
         logger.warning(f"⚠  {msg}")
 
+    if settings.is_production and not settings.webhook_shared_secret:
+        msg = "APP_ENV=production but WEBHOOK_SHARED_SECRET is empty"
+        logger.warning(f"⚠  {msg}")
+        startup_errors.append(msg)
+
     if settings.strict_startup_validation and startup_errors:
         raise RuntimeError("Startup validation failed: " + " | ".join(startup_errors))
     if not settings.openai_api_key:

@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     pagerduty_api_key: str = Field(default="", alias="PAGERDUTY_API_KEY")
     alpha_vantage_key: str = Field(default="", alias="ALPHA_VANTAGE_KEY")
 
+    # Inbound webhooks hardening
+    webhook_shared_secret: str = Field(default="", alias="WEBHOOK_SHARED_SECRET")
+
     # Risk Scoring Weights
     risk_weight_sentiment: float = Field(default=0.25, alias="RISK_WEIGHT_SENTIMENT")
     risk_weight_anomaly: float = Field(default=0.25, alias="RISK_WEIGHT_ANOMALY")

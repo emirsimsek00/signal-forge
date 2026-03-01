@@ -20,16 +20,45 @@ logger = logging.getLogger("signalforge.webhooks")
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
+WEBHOOK_SECRET_HEADER = "x-webhook-secret"
+WEBHOOK_TENANT_HEADER = "x-tenant-id"
+
+
+def _validate_webhook_access(request: Request) -> str:
+    """Validate shared-secret auth and tenant binding for inbound webhooks.
+
+    Returns tenant_id on success.
+    """
+    configured_secret = (settings.webhook_shared_secret or "").strip()
+    if not configured_secret:
+        logger.error("Webhook request rejected: WEBHOOK_SHARED_SECRET is not configured")
+        raise HTTPException(status_code=503, detail="Webhook ingestion is not configured")
+
+    provided_secret = (request.headers.get(WEBHOOK_SECRET_HEADER) or "").strip()
+    if not provided_secret or not hmac.compare_digest(configured_secret, provided_secret):
+        raise HTTPException(status_code=401, detail="Invalid webhook credentials")
+
+    tenant_id = (request.headers.get(WEBHOOK_TENANT_HEADER) or "").strip()
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Missing tenant header")
+
+    if len(tenant_id) > 36:
+        raise HTTPException(status_code=400, detail="Invalid tenant header")
+
+    return tenant_id
+
 
 @router.post("/stripe")
 async def stripe_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     """Receive Stripe webhook events.
 
-    Verifies the webhook signature if STRIPE_WEBHOOK_SECRET is configured.
+    Requires shared-secret auth + tenant header.
+    Verifies Stripe signature when STRIPE_WEBHOOK_SECRET is configured.
     """
+    tenant_id = _validate_webhook_access(request)
     body = await request.body()
 
-    # Optional signature verification
+    # Optional Stripe signature verification
     stripe_sig = request.headers.get("stripe-signature", "")
     webhook_secret = getattr(settings, "stripe_webhook_secret", "")
     if webhook_secret and stripe_sig:
@@ -45,6 +74,7 @@ async def stripe_webhook(request: Request, session: AsyncSession = Depends(get_s
     data_obj = payload.get("data", {}).get("object", {})
 
     signal = Signal(
+        tenant_id=tenant_id,
         source="stripe",
         source_id=payload.get("id", ""),
         title=f"Stripe: {event_type}",
@@ -60,13 +90,17 @@ async def stripe_webhook(request: Request, session: AsyncSession = Depends(get_s
     session.add(signal)
     await session.commit()
 
-    logger.info(f"Stripe webhook received: {event_type}")
+    logger.info(f"Stripe webhook received: {event_type} (tenant={tenant_id})")
     return {"status": "ok", "event_type": event_type}
 
 
 @router.post("/pagerduty")
 async def pagerduty_webhook(request: Request, session: AsyncSession = Depends(get_session)):
-    """Receive PagerDuty webhook v3 events."""
+    """Receive PagerDuty webhook v3 events.
+
+    Requires shared-secret auth + tenant header.
+    """
+    tenant_id = _validate_webhook_access(request)
     try:
         payload = await request.json()
     except Exception:
@@ -77,6 +111,7 @@ async def pagerduty_webhook(request: Request, session: AsyncSession = Depends(ge
     incident = event.get("data", {})
 
     signal = Signal(
+        tenant_id=tenant_id,
         source="pagerduty",
         source_id=incident.get("id", ""),
         title=incident.get("title", f"PagerDuty: {event_type}"),
@@ -93,7 +128,7 @@ async def pagerduty_webhook(request: Request, session: AsyncSession = Depends(ge
     session.add(signal)
     await session.commit()
 
-    logger.info(f"PagerDuty webhook received: {event_type}")
+    logger.info(f"PagerDuty webhook received: {event_type} (tenant={tenant_id})")
     return {"status": "ok", "event_type": event_type}
 
 
@@ -101,7 +136,9 @@ async def pagerduty_webhook(request: Request, session: AsyncSession = Depends(ge
 async def generic_webhook(request: Request, session: AsyncSession = Depends(get_session)):
     """Generic JSON webhook — accepts any JSON payload as a signal.
 
-    Expected format:
+    Requires shared-secret auth + tenant header.
+
+    Expected payload format:
     {
         "source": "my-system",
         "title": "Event title",
@@ -109,6 +146,7 @@ async def generic_webhook(request: Request, session: AsyncSession = Depends(get_
         "metadata": { ... }
     }
     """
+    tenant_id = _validate_webhook_access(request)
     try:
         payload = await request.json()
     except Exception:
@@ -119,6 +157,7 @@ async def generic_webhook(request: Request, session: AsyncSession = Depends(get_
     content = payload.get("content", json.dumps(payload))
 
     signal = Signal(
+        tenant_id=tenant_id,
         source=source,
         source_id=payload.get("id", ""),
         title=title,
@@ -129,7 +168,7 @@ async def generic_webhook(request: Request, session: AsyncSession = Depends(get_
     session.add(signal)
     await session.commit()
 
-    logger.info(f"Generic webhook received from {source}")
+    logger.info(f"Generic webhook received from {source} (tenant={tenant_id})")
     return {"status": "ok", "source": source}
 
 
