@@ -3,6 +3,8 @@
 import json
 from datetime import datetime, timedelta
 
+from backend.utils.time import utc_now
+
 import pytest
 from sqlalchemy import select
 
@@ -26,7 +28,7 @@ class TestAutoIncidentManager:
             metric_value=0.8,
             threshold=0.5,
             affected_signal_ids=[101, 102],
-            detected_at=datetime.utcnow(),
+            detected_at=utc_now(),
         )
 
         created = await manager.create_from_anomalies(db_session, [anomaly])
@@ -51,7 +53,7 @@ class TestAutoIncidentManager:
             metric_value=15.0,
             threshold=8.0,
             affected_signal_ids=[1, 2],
-            detected_at=datetime.utcnow() - timedelta(minutes=5),
+            detected_at=utc_now() - timedelta(minutes=5),
         )
         second = AnomalyEvent(
             id="a-3",
@@ -63,7 +65,7 @@ class TestAutoIncidentManager:
             metric_value=40.0,
             threshold=8.0,
             affected_signal_ids=[3, 4],
-            detected_at=datetime.utcnow(),
+            detected_at=utc_now(),
         )
 
         created_first = await manager.create_from_anomalies(db_session, [first])
@@ -83,7 +85,7 @@ class TestAutoIncidentManager:
     @pytest.mark.asyncio
     async def test_create_from_forecasts(self, db_session):
         # Build a clearly declining revenue metric.
-        now = datetime.utcnow()
+        now = utc_now()
         for i in range(12):
             value = 150000 - (i * 3500)
             db_session.add(
@@ -122,7 +124,7 @@ class TestAutoIncidentManager:
             description="Test",
             severity="high",
             status="investigating",
-            start_time=datetime.utcnow() - timedelta(hours=5),
+            start_time=utc_now() - timedelta(hours=5),
             related_signal_ids_json="[]",
         )
         db_session.add(incident)

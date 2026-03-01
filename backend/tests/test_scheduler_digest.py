@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from backend.utils.time import utc_now
+
 import pytest
 
 from backend.models.incident import Incident
@@ -13,7 +15,7 @@ from backend.workers.scheduler import BackgroundScheduler
 
 @pytest.mark.asyncio
 async def test_build_daily_digest_context_scopes_to_tenant(db_session):
-    now = datetime.utcnow()
+    now = utc_now()
     window_ts = now - timedelta(hours=1)
 
     db_session.add_all(

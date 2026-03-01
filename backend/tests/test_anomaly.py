@@ -3,6 +3,8 @@
 import pytest
 from datetime import datetime, timedelta
 
+from backend.utils.time import utc_now
+
 from backend.anomaly.detector import AnomalyDetector, AnomalyEvent
 from backend.models.signal import Signal
 
@@ -91,7 +93,7 @@ class TestAnomalyDetector:
     @pytest.mark.asyncio
     async def test_run_detection_with_signals(self, db_session):
         """Detection with signals should not error."""
-        now = datetime.utcnow()
+        now = utc_now()
         for i in range(20):
             sig = Signal(
                 source="reddit",

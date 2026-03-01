@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from backend.utils.time import utc_now
+
 import pytest
 from sqlalchemy import func, select
 
@@ -79,7 +81,7 @@ async def test_simulator_scopes_to_tenant(db_session):
                 source_id="a-1",
                 title="A Signal",
                 content="Tenant A signal",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 sentiment_score=-0.2,
                 risk_score=0.6,
                 risk_tier="high",
@@ -90,7 +92,7 @@ async def test_simulator_scopes_to_tenant(db_session):
                 source_id="b-1",
                 title="B Signal",
                 content="Tenant B signal",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 sentiment_score=0.4,
                 risk_score=0.2,
                 risk_tier="low",

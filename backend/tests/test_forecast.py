@@ -3,6 +3,8 @@
 import json
 from datetime import datetime, timedelta
 
+from backend.utils.time import utc_now
+
 import pytest
 
 from backend.forecasting.engine import ForecastEngine
@@ -12,7 +14,7 @@ from backend.models.signal import Signal
 class TestForecastEngine:
     @pytest.mark.asyncio
     async def test_list_metric_names(self, db_session):
-        now = datetime.utcnow()
+        now = utc_now()
         for i in range(5):
             db_session.add(
                 Signal(
@@ -34,7 +36,7 @@ class TestForecastEngine:
 
     @pytest.mark.asyncio
     async def test_generate_forecast_with_data(self, db_session):
-        now = datetime.utcnow()
+        now = utc_now()
         for i in range(8):
             db_session.add(
                 Signal(

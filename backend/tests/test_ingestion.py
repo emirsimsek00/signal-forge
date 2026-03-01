@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta
 
+from backend.utils.time import utc_now
+
 import pytest
 
 from backend.ingestion.demo_data import DemoDataGenerator
@@ -29,7 +31,7 @@ class TestDemoDataGenerator:
     @pytest.mark.asyncio
     async def test_fetch_signals_recent_timestamps(self):
         source = DemoDataGenerator()
-        now = datetime.utcnow()
+        now = utc_now().replace(tzinfo=None)
         signals = await source.fetch_signals(limit=20)
         for sig in signals:
             delta = abs((now - sig.timestamp.replace(tzinfo=None)).total_seconds())

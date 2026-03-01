@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from backend.utils.time import utc_now
+
 import pytest
 from fastapi import HTTPException
 
@@ -17,7 +19,7 @@ def _incident(status: str = "active", end_time: datetime | None = None) -> Incid
         description="Test description",
         severity="high",
         status=status,
-        start_time=datetime.utcnow(),
+        start_time=utc_now(),
         end_time=end_time,
         related_signal_ids_json="[]",
     )
@@ -38,7 +40,7 @@ def test_resolve_sets_terminal_status_and_end_time() -> None:
 
 
 def test_reopen_clears_end_time() -> None:
-    incident = _incident(status="resolved", end_time=datetime.utcnow())
+    incident = _incident(status="resolved", end_time=utc_now())
     _apply_transition(incident, "reopen")
     assert incident.status == "active"
     assert incident.end_time is None

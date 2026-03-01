@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from backend.utils.time import utc_now
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -49,7 +51,7 @@ async def test_cross_tenant_signal_and_incident_access_is_blocked(route_guard_ap
                 source_id="a-1",
                 title="A signal",
                 content="tenant a signal",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 sentiment_score=-0.2,
                 sentiment_label="negative",
                 risk_score=0.9,
@@ -61,7 +63,7 @@ async def test_cross_tenant_signal_and_incident_access_is_blocked(route_guard_ap
                 description="tenant a incident",
                 severity="high",
                 status="active",
-                start_time=datetime.utcnow(),
+                start_time=utc_now(),
                 related_signal_ids_json="[]",
             ),
         ]
@@ -91,7 +93,7 @@ async def test_cross_tenant_correlation_returns_no_data(route_guard_app, db_sess
                 source_id="a-1",
                 title="A signal",
                 content="tenant a signal",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 sentiment_score=-0.2,
                 sentiment_label="negative",
                 embedding_json="[0.1,0.2,0.3]",
@@ -102,7 +104,7 @@ async def test_cross_tenant_correlation_returns_no_data(route_guard_app, db_sess
                 source_id="a-2",
                 title="A signal 2",
                 content="tenant a signal 2",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 sentiment_score=-0.1,
                 sentiment_label="negative",
                 embedding_json="[0.11,0.2,0.29]",

@@ -3,6 +3,8 @@
 import json
 from datetime import datetime, timedelta
 
+from backend.utils.time import utc_now
+
 import pytest
 
 from backend.correlation.correlator import SignalCorrelator
@@ -22,7 +24,7 @@ def correlator() -> SignalCorrelator:
 
 @pytest.fixture
 def sample_signals():
-    now = datetime.utcnow()
+    now = utc_now()
     return [
         Signal(
             id=1,

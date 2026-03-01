@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from backend.utils.time import utc_now
+
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -94,7 +96,7 @@ async def test_tenant_scoped_chat_dashboard_and_forecast(secure_test_app, db_ses
                 source_id="a-1",
                 title="CPU spike A",
                 content="Tenant A alert",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 sentiment_score=-0.2,
                 sentiment_label="negative",
                 risk_score=0.8,
@@ -107,7 +109,7 @@ async def test_tenant_scoped_chat_dashboard_and_forecast(secure_test_app, db_ses
                 source_id="b-1",
                 title="CPU spike B",
                 content="Tenant B alert",
-                timestamp=datetime.utcnow(),
+                timestamp=utc_now(),
                 sentiment_score=0.1,
                 sentiment_label="neutral",
                 risk_score=0.2,
