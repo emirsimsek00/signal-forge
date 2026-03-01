@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import random
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from backend.utils.time import utc_now
 
 from backend.ingestion.base import RawSignal, SignalSource
 
@@ -133,7 +135,7 @@ class DemoDataGenerator(SignalSource):
 
     async def fetch_signals(self, limit: int = 50) -> list[RawSignal]:
         signals: list[RawSignal] = []
-        now = datetime.utcnow()
+        now = utc_now()
 
         # Decide if we inject anomalies for this batch
         inject_anomaly = random.random() < 0.35

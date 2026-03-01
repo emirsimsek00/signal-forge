@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from backend.utils.time import utc_now
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -56,7 +58,7 @@ async def generate_brief(
     session: AsyncSession = Depends(get_session),
 ):
     """Generate a structured executive brief from recent signal activity."""
-    now = datetime.utcnow()
+    now = utc_now()
     since = now - timedelta(hours=lookback_hours)
 
     total_signals = (

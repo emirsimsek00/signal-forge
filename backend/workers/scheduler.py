@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from backend.utils.time import utc_now
 from typing import Optional
 
 from sqlalchemy import delete, desc, func, select
@@ -239,7 +241,7 @@ class BackgroundScheduler:
                     if forecast_incidents:
                         logger.info(f"Generated {len(forecast_incidents)} forecast incidents")
                         created_incidents.extend(forecast_incidents)
-                    self._last_forecast_incident_check = datetime.utcnow()
+                    self._last_forecast_incident_check = utc_now()
             except Exception as e:
                 logger.error(f"Forecast incident generation error: {e}")
 
@@ -292,11 +294,11 @@ class BackgroundScheduler:
     def _should_run_forecast_incident_check(self) -> bool:
         if self._last_forecast_incident_check is None:
             return True
-        return datetime.utcnow() - self._last_forecast_incident_check >= timedelta(minutes=15)
+        return utc_now() - self._last_forecast_incident_check >= timedelta(minutes=15)
 
     async def _cleanup_old_signals(self, session) -> None:
         """Delete signals older than retention_days to prevent unbounded DB growth."""
-        cutoff = datetime.utcnow() - timedelta(days=settings.retention_days)
+        cutoff = utc_now() - timedelta(days=settings.retention_days)
         result = await session.execute(
             delete(Signal).where(Signal.timestamp < cutoff)
         )
@@ -308,7 +310,7 @@ class BackgroundScheduler:
         """Send daily digest notifications once per UTC day to subscribed tenants."""
         from backend.models.notification import NotificationPreference
 
-        now = datetime.utcnow()
+        now = utc_now()
         tenant_result = await session.execute(
             select(NotificationPreference.tenant_id)
             .where(

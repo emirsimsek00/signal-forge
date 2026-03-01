@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from backend.utils.time import utc_now
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, desc
@@ -90,7 +90,7 @@ async def create_incident(
 
 def _apply_transition(incident: Incident, action: str) -> None:
     """Apply a lifecycle action to an incident or raise 409 if invalid."""
-    now = datetime.utcnow()
+    now = utc_now()
 
     if action == "acknowledge":
         if incident.status not in {"active", "investigating"}:
@@ -166,7 +166,7 @@ async def _transition_incident(
                 "action": action,
                 "status": incident.status,
                 "severity": incident.severity,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now().isoformat(),
             }
         )
 

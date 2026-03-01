@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from backend.utils.time import utc_now
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, desc, cast, Integer, case
@@ -22,7 +24,7 @@ async def dashboard_overview(
     session: AsyncSession = Depends(get_session),
 ):
     """Aggregated dashboard overview — KPI cards data."""
-    now = datetime.utcnow()
+    now = utc_now()
 
     # Total signals
     total_signals = (
@@ -302,7 +304,7 @@ async def risk_trend(
     session: AsyncSession = Depends(get_session),
 ):
     """Risk score trend over time — hourly averages with tier counts."""
-    now = datetime.utcnow()
+    now = utc_now()
     window_start = now - timedelta(hours=hours)
 
     dialect_name = session.bind.dialect.name if session.bind else "sqlite"
@@ -356,7 +358,7 @@ async def sentiment_drift(
     session: AsyncSession = Depends(get_session),
 ):
     """Sentiment trend over time — average sentiment and label distribution."""
-    now = datetime.utcnow()
+    now = utc_now()
     window_start = now - timedelta(hours=hours)
 
     dialect_name = session.bind.dialect.name if session.bind else "sqlite"
@@ -408,7 +410,7 @@ async def incident_frequency(
     session: AsyncSession = Depends(get_session),
 ):
     """Daily incident creation frequency with severity breakdown."""
-    now = datetime.utcnow()
+    now = utc_now()
     window_start = now - timedelta(days=days)
 
     dialect_name = session.bind.dialect.name if session.bind else "sqlite"

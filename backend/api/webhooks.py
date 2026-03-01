@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime
+from backend.utils.time import utc_now
 
 from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +49,7 @@ async def stripe_webhook(request: Request, session: AsyncSession = Depends(get_s
         source_id=payload.get("id", ""),
         title=f"Stripe: {event_type}",
         content=json.dumps(data_obj)[:2000],
-        timestamp=datetime.utcnow(),
+        timestamp=utc_now(),
         metadata_json=json.dumps({
             "event_type": event_type,
             "amount": data_obj.get("amount", 0),
@@ -81,7 +81,7 @@ async def pagerduty_webhook(request: Request, session: AsyncSession = Depends(ge
         source_id=incident.get("id", ""),
         title=incident.get("title", f"PagerDuty: {event_type}"),
         content=incident.get("description", incident.get("title", "PagerDuty event")),
-        timestamp=datetime.utcnow(),
+        timestamp=utc_now(),
         metadata_json=json.dumps({
             "event_type": event_type,
             "status": incident.get("status", ""),
@@ -123,7 +123,7 @@ async def generic_webhook(request: Request, session: AsyncSession = Depends(get_
         source_id=payload.get("id", ""),
         title=title,
         content=content[:2000],
-        timestamp=datetime.utcnow(),
+        timestamp=utc_now(),
         metadata_json=json.dumps(payload.get("metadata", {})),
     )
     session.add(signal)

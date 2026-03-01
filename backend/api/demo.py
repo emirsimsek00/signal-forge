@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from backend.utils.time import utc_now
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import delete, func, select
@@ -153,7 +155,7 @@ async def seed_demo_data(
             "signal_count": count,
         }
 
-    now = datetime.utcnow()
+    now = utc_now()
     created_signals: list[Signal] = []
 
     # Create signals with varied timestamps over the past 72 hours

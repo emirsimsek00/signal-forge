@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from backend.utils.time import utc_now
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -124,11 +126,11 @@ def parse_filters(query: str) -> dict:
         m = re.search(pattern, q)
         if m:
             if unit == "hours":
-                filters["since"] = datetime.utcnow() - timedelta(hours=int(m.group(1)))
+                filters["since"] = utc_now() - timedelta(hours=int(m.group(1)))
             elif unit == "days":
-                filters["since"] = datetime.utcnow() - timedelta(days=int(m.group(1)))
+                filters["since"] = utc_now() - timedelta(days=int(m.group(1)))
             elif pattern in ("today", r"last\s+24\s+hour"):
-                filters["since"] = datetime.utcnow() - timedelta(hours=24)
+                filters["since"] = utc_now() - timedelta(hours=24)
             break
 
     # Keywords (strip out recognized filter words)

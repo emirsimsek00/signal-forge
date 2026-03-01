@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, timedelta
+
+from backend.utils.time import utc_now
 from typing import Any, Optional
 
 from sqlalchemy import desc, select
@@ -178,11 +180,13 @@ class AutoIncidentManager:
             .order_by(desc(Incident.start_time))
         )
         incidents = result.scalars().all()
-        now = datetime.utcnow()
+        now = utc_now()
         resolved: list[Incident] = []
 
         for incident in incidents:
             started = incident.start_time or now
+            if getattr(started, "tzinfo", None) is None:
+                started = started.replace(tzinfo=UTC)
             if incident.title.startswith("[Anomaly]") and active_anomaly_titles is not None:
                 is_stale = (
                     incident.title not in active_anomaly_titles
@@ -219,7 +223,7 @@ class AutoIncidentManager:
         window_hours: int,
         limit: int,
     ) -> list[int]:
-        since = datetime.utcnow() - timedelta(hours=window_hours)
+        since = utc_now() - timedelta(hours=window_hours)
         result = await session.execute(
             select(Signal.id, Signal.metadata_json)
             .where(Signal.timestamp >= since, Signal.metadata_json.isnot(None))

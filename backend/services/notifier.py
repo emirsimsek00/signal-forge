@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from backend.utils.time import utc_now
 
 import httpx
 
@@ -157,7 +157,7 @@ def format_incident_slack(incident_data: dict, event: str = "created") -> dict:
 
 def format_daily_digest_email(digest_data: dict) -> tuple[str, str]:
     """Return (subject, html) for a daily digest summary email."""
-    date_label = digest_data.get("date", datetime.utcnow().strftime("%Y-%m-%d"))
+    date_label = digest_data.get("date", utc_now().strftime("%Y-%m-%d"))
     total_signals = int(digest_data.get("total_signals", 0))
     critical_signals = int(digest_data.get("critical_signals", 0))
     active_incidents = int(digest_data.get("active_incidents", 0))
@@ -198,7 +198,7 @@ def format_daily_digest_email(digest_data: dict) -> tuple[str, str]:
 
 def format_daily_digest_slack(digest_data: dict) -> dict:
     """Return Slack Block Kit payload for daily digest summary."""
-    date_label = digest_data.get("date", datetime.utcnow().strftime("%Y-%m-%d"))
+    date_label = digest_data.get("date", utc_now().strftime("%Y-%m-%d"))
     total_signals = int(digest_data.get("total_signals", 0))
     critical_signals = int(digest_data.get("critical_signals", 0))
     active_incidents = int(digest_data.get("active_incidents", 0))

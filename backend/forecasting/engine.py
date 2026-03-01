@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from backend.utils.time import utc_now
 
 import numpy as np
 from sqlalchemy import desc, select
@@ -55,7 +57,7 @@ class ForecastEngine:
                 confidence=0.0,
                 observed_points=[],
                 predicted_values=[],
-                generated_at=datetime.utcnow(),
+                generated_at=utc_now(),
             )
 
         if len(series) < 3:
@@ -69,7 +71,7 @@ class ForecastEngine:
         max_scan_rows: int = 3000,
         tenant_id: str | None = None,
     ) -> list[str]:
-        since = datetime.utcnow() - timedelta(hours=lookback_hours)
+        since = utc_now() - timedelta(hours=lookback_hours)
         query = (
             select(Signal.metadata_json)
             .where(Signal.timestamp >= since, Signal.metadata_json.isnot(None))
@@ -102,7 +104,7 @@ class ForecastEngine:
         lookback_hours: int,
         tenant_id: str | None = None,
     ) -> list[ForecastPoint]:
-        since = datetime.utcnow() - timedelta(hours=lookback_hours)
+        since = utc_now() - timedelta(hours=lookback_hours)
         query = (
             select(Signal.timestamp, Signal.metadata_json)
             .where(Signal.timestamp >= since, Signal.metadata_json.isnot(None))
@@ -154,7 +156,7 @@ class ForecastEngine:
             confidence=0.45,
             observed_points=series,
             predicted_values=predicted,
-            generated_at=datetime.utcnow(),
+            generated_at=utc_now(),
         )
 
     def _linear_forecast(
@@ -204,7 +206,7 @@ class ForecastEngine:
             confidence=round(confidence, 3),
             observed_points=series,
             predicted_values=predicted,
-            generated_at=datetime.utcnow(),
+            generated_at=utc_now(),
         )
 
     @staticmethod

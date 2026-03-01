@@ -6,6 +6,8 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+
+from backend.utils.time import utc_now
 from typing import Optional
 
 from sqlalchemy import select, func
@@ -26,7 +28,7 @@ class AnomalyEvent:
     metric_value: float
     threshold: float
     affected_signal_ids: list[int] = field(default_factory=list)
-    detected_at: datetime = field(default_factory=datetime.utcnow)
+    detected_at: datetime = field(default_factory=utc_now)
 
 
 class AnomalyDetector:
@@ -63,7 +65,7 @@ class AnomalyDetector:
     async def _detect_volume_spikes(self, session: AsyncSession) -> list[AnomalyEvent]:
         """Detect unusual signal volume per source in the last hour vs rolling average."""
         events: list[AnomalyEvent] = []
-        now = datetime.utcnow()
+        now = utc_now()
 
         # Count signals per source in the last hour
         recent_query = (
@@ -114,7 +116,7 @@ class AnomalyDetector:
     async def _detect_risk_spikes(self, session: AsyncSession) -> list[AnomalyEvent]:
         """Detect sudden risk score jumps above 2σ from rolling mean."""
         events: list[AnomalyEvent] = []
-        now = datetime.utcnow()
+        now = utc_now()
 
         # Recent avg risk (last hour)
         recent = await session.execute(
@@ -178,7 +180,7 @@ class AnomalyDetector:
     async def _detect_sentiment_drift(self, session: AsyncSession) -> list[AnomalyEvent]:
         """Detect shift from neutral/positive to predominantly negative sentiment."""
         events: list[AnomalyEvent] = []
-        now = datetime.utcnow()
+        now = utc_now()
 
         # Recent negative ratio (last 2 hours)
         recent = await session.execute(
