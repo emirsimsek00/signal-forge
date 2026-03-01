@@ -129,6 +129,21 @@ docker compose up --build
 This starts the backend, frontend, and nginx reverse proxy. The app is served on port 80.
 The backend container is configured to run `alembic upgrade head` on startup (`RUN_DB_MIGRATIONS=true` in `docker-compose.yml`).
 
+### Render deployment (fix for "Couldn't find a package.json")
+
+SignalForge root is a Python + Docker project, not a root-level Node app. If Render is configured as a Node service, deploy fails with:
+
+`Couldn't find a package.json file in "/opt/render/project/src"`
+
+Use Docker deployment instead:
+
+1. Push this repo with `render.yaml` included.
+2. In Render, create a **Blueprint** service from the repo (or set existing service Environment to Docker).
+3. Ensure Dockerfile path is `./Dockerfile`.
+4. Deploy.
+
+The included `render.yaml` is preconfigured for this and exposes `/api/health` as the health check.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in any keys you want to use:
