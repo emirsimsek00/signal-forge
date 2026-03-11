@@ -67,9 +67,10 @@ export default function Sidebar() {
     const { user, tenant, isDemo, signOut } = useAuth();
     const [signingOut, setSigningOut] = useState(false);
 
-    const userName =
-        (user?.user_metadata?.display_name as string | undefined) ||
-        (user?.email ? user.email.split("@")[0] : "Guest");
+    const userName = isDemo
+        ? "Demo User"
+        : ((user?.user_metadata?.display_name as string | undefined) ||
+            (user?.email ? user.email.split("@")[0] : "Guest"));
     const workspaceName = tenant?.name || (isDemo ? "Demo Workspace" : "No Workspace");
 
     const handleSignOut = async () => {
@@ -135,14 +136,20 @@ export default function Sidebar() {
                         <p className="text-[0.65rem] text-slate-500 truncate">{workspaceName}</p>
                     </div>
                 </div>
-                <button
-                    onClick={handleSignOut}
-                    disabled={signingOut}
-                    className="mt-3 w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 hover:border-indigo-400/50 transition disabled:opacity-60"
-                >
-                    <LogOut className="w-3.5 h-3.5" />
-                    {signingOut ? "Signing out..." : "Sign Out"}
-                </button>
+                {isDemo ? (
+                    <p className="mt-3 text-[0.65rem] text-slate-500">
+                        Demo mode active (authentication disabled).
+                    </p>
+                ) : (
+                    <button
+                        onClick={handleSignOut}
+                        disabled={signingOut}
+                        className="mt-3 w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-300 hover:border-indigo-400/50 transition disabled:opacity-60"
+                    >
+                        <LogOut className="w-3.5 h-3.5" />
+                        {signingOut ? "Signing out..." : "Sign Out"}
+                    </button>
+                )}
             </div>
 
             {/* Status footer */}

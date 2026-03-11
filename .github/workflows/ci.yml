@@ -40,6 +40,11 @@ jobs:
         env:
           USE_MOCK_ML: "true"
           DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+      - name: Python dependency audit (non-blocking)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit
 
   frontend-quality:
     runs-on: ubuntu-latest
@@ -59,6 +64,10 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+      - name: Frontend dependency audit (non-blocking)
+        continue-on-error: true
+        working-directory: frontend
+        run: npm audit --audit-level=high
 
   docker:
     runs-on: ubuntu-latest
